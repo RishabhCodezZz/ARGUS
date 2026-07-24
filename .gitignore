@@ -16,3 +16,8 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local-only planning docs (not needed by others viewing the repo)
+.claude/
+ARGUS_ADK_Requirements.md
+PLAN.md
