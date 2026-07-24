@@ -11,6 +11,7 @@ properly or removing it — never by making up a replacement figure.
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 
+from argus.callbacks.guardrails import MODEL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import (
     ANALYSIS_QUANT,
@@ -54,4 +55,5 @@ refiner_agent = Agent(
     description="Rewrites the draft thesis to address the Critic's critique.",
     instruction=_refiner_instruction,
     output_key=DRAFT_THESIS,
+    **MODEL_GUARDRAILS,
 )

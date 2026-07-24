@@ -11,6 +11,14 @@ system built on Google's Agent Development Kit (ADK). Give it a company name and
 4. **Red-teams itself**: a Critic checks the draft against the evidence for unsupported claims or
    cherry-picking; a Refiner fixes what it finds. Loops until it passes or 4 iterations run out
    (`argus/agents/critic.py`, `refiner.py`).
+5. **Verifies groundedness**: every numeric claim in the final draft is checked against the evidence
+   by a deterministic matcher (not an LLM's opinion) — ungrounded claims get flagged in place, and a
+   `meta.groundedness` score is recorded (`argus/agents/verifier.py`, `argus/tools/claim_matcher.py`).
+
+Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
+whole pipeline: blocking direct trade-advice requests, stripping unhedged action language from any
+agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
+tool results (prompt-injection defense).
 
 Runs entirely on the Gemini API free tier, no cloud project required.
 
@@ -21,6 +29,12 @@ Runs entirely on the Gemini API free tier, no cloud project required.
 ```
 
 Open http://localhost:8000, pick the `argus` app, and chat with it.
+
+Run the test suite (pure Python, no API calls, no cost):
+
+```bash
+.venv/Scripts/python.exe -m pytest tests/ -v
+```
 
 ## Setup
 
@@ -56,3 +70,18 @@ Open http://localhost:8000, pick the `argus` app, and chat with it.
   across 3 runs, including one where the critic stated PASS in text without calling the exit tool that
   iteration — the loop correctly ran one extra harmless pass before exiting, confirming `max_iterations`
   (not escalate) is the actual non-negotiable safety net against a non-converging loop.
+- **Stage 3 (2026-07-24)** — Groundedness Verifier + 4 guardrail callbacks. `verifier_agent` extracts
+  every numeric claim from the final draft and checks each against the evidence via a deterministic
+  matcher tool (`check_grounding`), writing `meta.groundedness` and flagging (not deleting) anything
+  ungrounded as `[UNVERIFIED: ...]`. `argus/callbacks/guardrails.py` adds `before_model_callback`
+  (blocks direct trade-advice requests), `after_model_callback` (strips unhedged action language),
+  `before_tool_callback` (per-session tool-call budget), and `after_tool_callback` (provenance logging
+  + injected-instruction screening), wired onto all 8 agents.
+
+  Live adversarial testing (a prompt injecting a fake "2026 projected revenue of $5 billion") caught
+  two real bugs before they shipped: the Quant agent was echoing the injected claim back into its own
+  "deterministic" output as a hedged footnote, and a magnitude-scaled matching tolerance let the
+  fabricated "2026" pass as "close enough" to a real "2025". Both fixed and re-verified live — the
+  Quant/Synthesis agents now refuse to acknowledge injected claims at all, and the Verifier still
+  catches the residual mention (`meta.groundedness = 0.9545`, `[UNVERIFIED: 2026]` visibly flagged).
+  18 pytest tests total, including a regression test for the tolerance bug.

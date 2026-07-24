@@ -6,6 +6,7 @@ from argus.agents.gather import evidence_gather
 from argus.agents.quant import quant_agent
 from argus.agents.refiner import refiner_agent
 from argus.agents.synthesis import synthesis_agent
+from argus.agents.verifier import verifier_agent
 
 review_loop = LoopAgent(
     name="adversarial_review",
@@ -16,5 +17,5 @@ review_loop = LoopAgent(
 
 root_agent = SequentialAgent(
     name="argus_pipeline",
-    sub_agents=[evidence_gather, quant_agent, synthesis_agent, review_loop],
+    sub_agents=[evidence_gather, quant_agent, synthesis_agent, review_loop, verifier_agent],
 )

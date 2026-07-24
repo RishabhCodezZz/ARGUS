@@ -18,6 +18,7 @@ verbatim JSON out of the gatherers keeps that boundary exact.
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 
+from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 from argus.tools.mock_data import get_filings, get_market_data, get_news
@@ -39,6 +40,8 @@ filings_agent = Agent(
     ),
     tools=[get_filings],
     output_key=EVIDENCE_FILINGS,
+    **MODEL_GUARDRAILS,
+    **TOOL_GUARDRAILS,
 )
 
 market_agent = Agent(
@@ -52,6 +55,8 @@ market_agent = Agent(
     ),
     tools=[get_market_data],
     output_key=EVIDENCE_MARKET,
+    **MODEL_GUARDRAILS,
+    **TOOL_GUARDRAILS,
 )
 
 sentiment_agent = Agent(
@@ -65,6 +70,8 @@ sentiment_agent = Agent(
     ),
     tools=[get_news],
     output_key=EVIDENCE_SENTIMENT,
+    **MODEL_GUARDRAILS,
+    **TOOL_GUARDRAILS,
 )
 
 evidence_gather = ParallelAgent(

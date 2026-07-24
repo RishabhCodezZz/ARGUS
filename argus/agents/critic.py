@@ -12,6 +12,7 @@ from google.adk.agents.llm_agent import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.tool_context import ToolContext
 
+from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import (
     ANALYSIS_QUANT,
@@ -76,4 +77,6 @@ critic_agent = Agent(
     instruction=_critic_instruction,
     tools=[exit_loop],
     output_key=REVIEW_CRITIQUE,
+    **MODEL_GUARDRAILS,
+    **TOOL_GUARDRAILS,
 )

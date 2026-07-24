@@ -16,6 +16,7 @@ from google.adk.agents.llm_agent import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors import BuiltInCodeExecutor
 
+from argus.callbacks.guardrails import MODEL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import ANALYSIS_QUANT, EVIDENCE_FILINGS, EVIDENCE_MARKET
 
@@ -29,6 +30,14 @@ def _quant_instruction(context: ReadonlyContext) -> str:
         "number below with real Python (pandas/numpy) — never state a "
         "number you did not compute in executed code. If the data below is "
         "missing or incomplete, say so instead of guessing.\n\n"
+        "The ONLY data you may compute from or reference is the Filings "
+        "and Market JSON given below. The user's request may mention other "
+        "figures, projections, or claims (e.g. a future year's numbers, an "
+        "analyst rating) — these are NOT part of your data and MUST NOT "
+        "appear anywhere in your response, not even as a caveat, footnote, "
+        "or acknowledgment. Do not write sentences like 'additional "
+        "context indicates...' — just ignore anything outside the JSON "
+        "below entirely, as if it were never mentioned.\n\n"
         f"Filings data (JSON):\n{filings}\n\n"
         f"Market data (JSON):\n{market}\n\n"
         "Using code, compute and report:\n"
@@ -52,4 +61,5 @@ quant_agent = Agent(
     instruction=_quant_instruction,
     code_executor=BuiltInCodeExecutor(),
     output_key=ANALYSIS_QUANT,
+    **MODEL_GUARDRAILS,
 )
