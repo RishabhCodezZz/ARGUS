@@ -1,0 +1,10 @@
+{
+  "company": "Globex",
+  "headlines": [
+    {"date": "2025-01-22", "headline": "Globex reports record 2024 revenue, CEO touts 'strongest year in company history'", "sentiment": "positive"},
+    {"date": "2025-03-11", "headline": "Globex announces layoffs affecting 8% of workforce amid cost-cutting push", "sentiment": "negative"},
+    {"date": "2025-05-30", "headline": "Globex CFO resigns abruptly; company cites 'personal reasons'", "sentiment": "negative"},
+    {"date": "2025-08-14", "headline": "Globex misses Q2 earnings estimates, posts wider than expected loss", "sentiment": "negative"},
+    {"date": "2025-10-02", "headline": "Globex secures new $500M credit facility to fund restructuring", "sentiment": "negative"}
+  ]
+}

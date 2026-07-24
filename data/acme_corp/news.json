@@ -1,0 +1,10 @@
+{
+  "company": "Acme Corp",
+  "headlines": [
+    {"date": "2025-02-10", "headline": "Acme Corp faces minor supply chain delays from steel supplier, expects Q1 impact", "sentiment": "negative"},
+    {"date": "2025-04-18", "headline": "Acme Corp Q1 earnings beat analyst expectations on strong industrial demand", "sentiment": "positive"},
+    {"date": "2025-06-02", "headline": "Acme Corp announces new automated manufacturing line at Columbus, OH plant", "sentiment": "positive"},
+    {"date": "2025-09-15", "headline": "Acme Corp raises full-year revenue guidance", "sentiment": "positive"},
+    {"date": "2025-11-20", "headline": "Acme Corp announces $50M share buyback program", "sentiment": "positive"}
+  ]
+}

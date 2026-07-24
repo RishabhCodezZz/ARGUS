@@ -1,0 +1,14 @@
+{
+  "company": "Acme Corp",
+  "sector": "Industrial Manufacturing",
+  "founded": 1987,
+  "employees": 4200,
+  "headquarters": "Columbus, OH",
+  "fiscal_years": [
+    {"year": 2021, "revenue_usd_millions": 650.0, "net_income_usd_millions": 39.0, "total_debt_usd_millions": 200.0},
+    {"year": 2022, "revenue_usd_millions": 700.0, "net_income_usd_millions": 45.5, "total_debt_usd_millions": 210.0},
+    {"year": 2023, "revenue_usd_millions": 745.0, "net_income_usd_millions": 51.4, "total_debt_usd_millions": 220.0},
+    {"year": 2024, "revenue_usd_millions": 780.0, "net_income_usd_millions": 57.0, "total_debt_usd_millions": 225.0},
+    {"year": 2025, "revenue_usd_millions": 812.4, "net_income_usd_millions": 63.1, "total_debt_usd_millions": 215.0}
+  ]
+}

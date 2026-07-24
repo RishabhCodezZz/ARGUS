@@ -1,0 +1,14 @@
+{
+  "company": "Globex",
+  "sector": "Consumer Electronics",
+  "founded": 2003,
+  "employees": 15800,
+  "headquarters": "Austin, TX",
+  "fiscal_years": [
+    {"year": 2021, "revenue_usd_millions": 2200.0, "net_income_usd_millions": 88.0, "total_debt_usd_millions": 900.0},
+    {"year": 2022, "revenue_usd_millions": 2450.0, "net_income_usd_millions": 61.25, "total_debt_usd_millions": 1050.0},
+    {"year": 2023, "revenue_usd_millions": 2700.0, "net_income_usd_millions": 13.5, "total_debt_usd_millions": 1200.0},
+    {"year": 2024, "revenue_usd_millions": 2850.0, "net_income_usd_millions": -57.0, "total_debt_usd_millions": 1400.0},
+    {"year": 2025, "revenue_usd_millions": 2940.7, "net_income_usd_millions": -118.2, "total_debt_usd_millions": 1550.0}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "argus-adk-web",
+      "runtimeExecutable": ".venv/Scripts/adk.exe",
+      "runtimeArgs": ["web", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}
