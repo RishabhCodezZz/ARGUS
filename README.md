@@ -1,8 +1,10 @@
 # ARGUS
 
 Autonomous Reasoning & Grounded Understanding System — a hierarchical multi-agent due-diligence
-system built on Google's Agent Development Kit (ADK). See [`ARGUS_ADK_Requirements.md`](ARGUS_ADK_Requirements.md)
-for the full spec and [`PLAN.md`](PLAN.md) for the staged build plan.
+system built on Google's Agent Development Kit (ADK). It takes a company name, fans out specialist
+agents to gather filings/market/sentiment data in parallel, computes real financial metrics via
+executed Python code (never LLM-estimated), drafts an analytical thesis, then red-teams and revises
+its own draft before returning it. See [`CLAUDE.md`](CLAUDE.md) for the full architecture and build log.
 
 ## Running it
 
@@ -39,3 +41,10 @@ Open http://localhost:8000, pick the `argus` app, and chat with it.
   nonexistent company degraded gracefully with no crash and no invented numbers.
   Running temporarily on `gemini-3.5-flash-lite` (higher free-tier quota) instead of the usual
   `gemini-flash-latest` — see `CLAUDE.md` for why, and switch back once iteration slows down.
+- **Stage 2 (2026-07-24)** — Self-critique loop: `critic_agent` red-teams `draft.thesis` against the
+  actual evidence and computed metrics, either passing it (calls `exit_loop`, a `FunctionTool` that
+  sets `tool_context.actions.escalate = True`) or writing a structured critique for `refiner_agent` to
+  address. Wrapped as `LoopAgent(max_iterations=4)`, inserted after Synthesis. Verified in the Dev UI
+  across 3 runs, including one where the critic stated PASS in text without calling the exit tool that
+  iteration — the loop correctly ran one extra harmless pass before exiting, confirming `max_iterations`
+  (not escalate) is the actual non-negotiable safety net against a non-converging loop.
