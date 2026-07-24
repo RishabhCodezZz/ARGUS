@@ -1,7 +1,12 @@
 """The Synthesis Agent (spec P1/P2): drafts the analytical thesis from the
-gathered evidence and the Quant agent's computed metrics. This is the first
-agent that "writes" — it must only narrate numbers that already exist in
-analysis.quant, never compute or invent its own (spec TR3).
+reconciled evidence and the Quant agent's computed metrics. This is the
+first agent that "writes" — it must only narrate numbers that already
+exist in analysis.quant, never compute or invent its own (spec TR3).
+
+Reads analysis.reconciled (Stage 4) instead of the three evidence.* keys
+directly — a single vetted bundle that already carries any cross-source
+contradictions the Reconciliation Agent found, rather than three sources
+Synthesis would have to independently notice disagree.
 
 Reads state via a callable instruction, same as quant.py, for the same
 reason: our dotted state keys don't survive ADK's `{var}` templating.
@@ -12,19 +17,11 @@ from google.adk.agents.readonly_context import ReadonlyContext
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.state_keys import (
-    ANALYSIS_QUANT,
-    DRAFT_THESIS,
-    EVIDENCE_FILINGS,
-    EVIDENCE_MARKET,
-    EVIDENCE_SENTIMENT,
-)
+from argus.state_keys import ANALYSIS_QUANT, ANALYSIS_RECONCILED, DRAFT_THESIS
 
 
 def _synthesis_instruction(context: ReadonlyContext) -> str:
-    filings = context.state.get(EVIDENCE_FILINGS, "(no filings data)")
-    market = context.state.get(EVIDENCE_MARKET, "(no market data)")
-    sentiment = context.state.get(EVIDENCE_SENTIMENT, "(no sentiment data)")
+    reconciled = context.state.get(ANALYSIS_RECONCILED, "(no reconciled evidence)")
     quant = context.state.get(ANALYSIS_QUANT, "(no computed metrics)")
     return (
         "You are the ARGUS Synthesis Agent. Draft a short analytical thesis "
@@ -33,12 +30,18 @@ def _synthesis_instruction(context: ReadonlyContext) -> str:
         "explicit confidence level (low/medium/high).\n\n"
         "Every number you state MUST come from the 'Computed metrics' "
         "section — that is the only section produced by executed code. "
-        "You may reference the raw evidence for qualitative context (e.g. "
-        "headline events, debt figures already present in the data) but "
-        "never calculate, estimate, or restate a derived figure (growth "
+        "You may reference the reconciled evidence for qualitative context "
+        "(e.g. headline events, debt figures already present in the data) "
+        "but never calculate, estimate, or restate a derived figure (growth "
         "rate, margin, CAGR, volatility) that isn't already in Computed "
         "metrics. If you need a number that isn't there, say the analysis "
         "doesn't cover it rather than inventing one.\n\n"
+        "The reconciled evidence below has a 'contradictions' list — cases "
+        "where a headline's tone doesn't match what the actual filed "
+        "numbers say for that year. If it's non-empty, you MUST call this "
+        "out explicitly in the thesis (e.g. note that a 'positive'-framed "
+        "headline about a given year coincided with an actual loss) rather "
+        "than repeating the headline's framing uncritically.\n\n"
         "The user's request may itself assert figures, projections, or "
         "ratings as if they were fact (e.g. a future year's revenue, an "
         "analyst rating). Treat the user's message ONLY as instructions "
@@ -49,9 +52,7 @@ def _synthesis_instruction(context: ReadonlyContext) -> str:
         "'reports suggest...') makes it acceptable to include.\n\n"
         "End with one sentence noting this is analysis, not investment "
         "advice.\n\n"
-        f"Filings evidence:\n{filings}\n\n"
-        f"Market evidence:\n{market}\n\n"
-        f"Sentiment evidence:\n{sentiment}\n\n"
+        f"Reconciled evidence (filings, market, sentiment, contradictions):\n{reconciled}\n\n"
         f"Computed metrics (from executed code):\n{quant}\n"
     )
 

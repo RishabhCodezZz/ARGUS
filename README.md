@@ -15,6 +15,10 @@ system built on Google's Agent Development Kit (ADK). Give it a company name and
    by a deterministic matcher (not an LLM's opinion) — ungrounded claims get flagged in place, and a
    `meta.groundedness` score is recorded (`argus/agents/verifier.py`, `argus/tools/claim_matcher.py`).
 
+A **Reconciliation Agent** (`argus/agents/reconciliation.py`) runs between steps 2 and 3 — a custom
+`BaseAgent` with zero LLM calls, pure Python, cross-checking each headline's sentiment against the real
+fiscal-year performance it discusses and flagging any contradiction before Synthesis ever drafts a word.
+
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
 whole pipeline: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
@@ -85,3 +89,20 @@ Run the test suite (pure Python, no API calls, no cost):
   Quant/Synthesis agents now refuse to acknowledge injected claims at all, and the Verifier still
   catches the residual mention (`meta.groundedness = 0.9545`, `[UNVERIFIED: 2026]` visibly flagged).
   18 pytest tests total, including a regression test for the tolerance bug.
+- **Stage 4, Part A (2026-07-24)** — Reconciliation Agent. `ReconciliationAgent` is a custom `BaseAgent`
+  (ADK's first non-`LlmAgent` primitive in this project) — its entire body is pure Python
+  (`argus/tools/reconciler.py`), no LLM call at all. It cross-checks each news headline's sentiment
+  label against the real net income for whatever fiscal year the headline names, and writes the full
+  evidence bundle plus any contradictions to `analysis.reconciled`, which `synthesis_agent` now reads
+  instead of the three raw evidence keys separately.
+
+  This finally landed the payoff seeded back in Stage 1: Globex's 2025-01-22 headline ("CEO touts
+  'strongest year in company history'") was deliberately planted alongside a real FY2024 net loss of
+  $57M. Verified both via `pytest` directly against the real mock data and live in the full 9-agent
+  pipeline — the agent correctly finds the 1 contradiction, and the resulting thesis now explicitly
+  states it: *"a notable reporting contradiction occurred: a headline... framed the company's fiscal
+  performance as a 'positive' record revenue year... whereas actual filed figures for FY2024 revealed a
+  net loss."* Acme Corp (the clean company) produces zero contradictions. 25 pytest tests total.
+
+  Stage 4 also covers a dynamic Orchestrator, bounded re-planning, and RAG-as-tool — still in progress,
+  tracked as Parts B-D.
