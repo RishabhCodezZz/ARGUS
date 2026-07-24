@@ -22,6 +22,10 @@ reads the request and decides how much of the system it actually needs:
      matcher — ungrounded claims get flagged in place, and a `meta.groundedness` score is recorded
      (`argus/agents/verifier.py`, `argus/tools/claim_matcher.py`).
 
+If the requested company isn't found, the Orchestrator gets **one bounded retry**: it picks the closest
+available name and tries again, disclosing the substitution rather than silently swapping it in. A
+genuinely nonexistent request still fails gracefully after that one attempt, never looping.
+
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
 whole system: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
@@ -121,3 +125,21 @@ Run the test suite (pure Python, no API calls, no cost):
   called `full_analysis_pipeline`, which ran the complete 6-stage chain internally (every state key
   populated in one combined delta) and returned the drafted thesis, including the Reconciliation
   Agent's contradiction callout — zero regressions to Stages 1-4A through the new routing layer.
+- **Stage 4, Part C (2026-07-24)** — Bounded re-planning (OR4). `check_gather_status`
+  (`argus/agents/orchestrator.py`) gives the Orchestrator a way to re-enter gathering with a "refined
+  subtask" — concretely, the closest available company name — capped by a real deterministic counter
+  (`meta.replan_count`, budget 1), the same belt-and-suspenders pattern as Stage 2's
+  `exit_loop`/`max_iterations`.
+
+  Live testing found and fixed two real bugs: the first design had the Orchestrator infer "missing
+  evidence" from the pipeline's returned prose, which silently never triggered a retry (a total gather
+  failure still produces a well-formed "Analytical Thesis... Confidence Level: Low," which doesn't read
+  as an unambiguous failure signal); fixed by checking `evidence.*` state directly for an error, instead
+  of trusting the LLM's own reading of the text. Second, a successful retry was presenting a substituted
+  company's analysis with no disclosure that a substitution happened; fixed by requiring the Orchestrator
+  to say so explicitly. Verified end-to-end: asking for "Initech" (absent from the dataset) correctly
+  fails, retries once with "Globex" (the closest match), succeeds, and opens with *"I couldn't find data
+  for Initech, so here's a full due-diligence analysis of Globex instead:"* before the verbatim,
+  still-correct thesis. This test needed two full pipeline runs in one turn, which sits right at the
+  free tier's 15-requests/minute ceiling — confirmed live that this quota is per-project, not per-key
+  (a second API key hit the identical limit immediately).
