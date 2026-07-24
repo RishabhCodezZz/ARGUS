@@ -1,26 +1,29 @@
 # ARGUS
 
 Autonomous Reasoning & Grounded Understanding System — a hierarchical multi-agent due-diligence
-system built on Google's Agent Development Kit (ADK). Give it a company name and it:
+system built on Google's Agent Development Kit (ADK). An **Orchestrator** (`argus/agents/orchestrator.py`)
+reads the request and decides how much of the system it actually needs:
 
-1. **Gathers** filings, market, and sentiment data in parallel (`argus/agents/gather.py`) — three
-   specialist agents, each writing to its own session-state key.
-2. **Computes** real financial metrics — YoY growth, margins, CAGR, debt trend, price volatility —
-   via executed Python (pandas/numpy), never LLM-estimated (`argus/agents/quant.py`).
-3. **Drafts** an analytical thesis citing only those computed numbers (`argus/agents/synthesis.py`).
-4. **Red-teams itself**: a Critic checks the draft against the evidence for unsupported claims or
-   cherry-picking; a Refiner fixes what it finds. Loops until it passes or 4 iterations run out
-   (`argus/agents/critic.py`, `refiner.py`).
-5. **Verifies groundedness**: every numeric claim in the final draft is checked against the evidence
-   by a deterministic matcher (not an LLM's opinion) — ungrounded claims get flagged in place, and a
-   `meta.groundedness` score is recorded (`argus/agents/verifier.py`, `argus/tools/claim_matcher.py`).
-
-A **Reconciliation Agent** (`argus/agents/reconciliation.py`) runs between steps 2 and 3 — a custom
-`BaseAgent` with zero LLM calls, pure Python, cross-checking each headline's sentiment against the real
-fiscal-year performance it discusses and flagging any contradiction before Synthesis ever drafts a word.
+- **Narrow question** (just the price, just the filings, just recent news) → routes directly to the one
+  matching specialist agent and formats its answer. The other specialists never run.
+- **Broad request** ("analyze X", "full due-diligence on X") → routes to the complete pipeline:
+  1. **Gathers** filings, market, and sentiment data in parallel (`argus/agents/gather.py`).
+  2. **Computes** real financial metrics — YoY growth, margins, CAGR, debt trend, price volatility —
+     via executed Python (pandas/numpy), never LLM-estimated (`argus/agents/quant.py`).
+  3. **Reconciles**: a custom `BaseAgent` with zero LLM calls cross-checks each headline's sentiment
+     against the real fiscal-year performance it discusses, flagging any contradiction
+     (`argus/agents/reconciliation.py`).
+  4. **Drafts** an analytical thesis citing only computed numbers and calling out any contradiction
+     found (`argus/agents/synthesis.py`).
+  5. **Red-teams itself**: a Critic checks the draft for unsupported claims or cherry-picking; a
+     Refiner fixes what it finds. Loops until it passes or 4 iterations run out
+     (`argus/agents/critic.py`, `refiner.py`).
+  6. **Verifies groundedness**: every numeric claim is checked against the evidence by a deterministic
+     matcher — ungrounded claims get flagged in place, and a `meta.groundedness` score is recorded
+     (`argus/agents/verifier.py`, `argus/tools/claim_matcher.py`).
 
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
-whole pipeline: blocking direct trade-advice requests, stripping unhedged action language from any
+whole system: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
 tool results (prompt-injection defense).
 
@@ -106,3 +109,15 @@ Run the test suite (pure Python, no API calls, no cost):
 
   Stage 4 also covers a dynamic Orchestrator, bounded re-planning, and RAG-as-tool — still in progress,
   tracked as Parts B-D.
+- **Stage 4, Part B (2026-07-24)** — Dynamic Orchestrator. `orchestrator_agent` is now `root_agent`,
+  replacing the old fixed pipeline as the entry point. It's a plain `LlmAgent` with 4 `AgentTool`s: the
+  three gather specialists individually, plus the entire existing pipeline wrapped whole as
+  `full_analysis_pipeline`. Its instruction routes narrow questions to one specialist directly and
+  broad requests to the full pipeline, presenting the pipeline's result verbatim since it's already
+  drafted, red-teamed, and groundedness-checked.
+
+  Verified live: asking about Acme Corp's recent stock price called *only* `market_agent` — the other
+  specialists and the full pipeline never fired. Asking for "a full due-diligence analysis of Globex"
+  called `full_analysis_pipeline`, which ran the complete 6-stage chain internally (every state key
+  populated in one combined delta) and returned the drafted thesis, including the Reconciliation
+  Agent's contradiction callout — zero regressions to Stages 1-4A through the new routing layer.
