@@ -1,10 +1,18 @@
 # ARGUS
 
 Autonomous Reasoning & Grounded Understanding System — a hierarchical multi-agent due-diligence
-system built on Google's Agent Development Kit (ADK). It takes a company name, fans out specialist
-agents to gather filings/market/sentiment data in parallel, computes real financial metrics via
-executed Python code (never LLM-estimated), drafts an analytical thesis, then red-teams and revises
-its own draft before returning it. See [`CLAUDE.md`](CLAUDE.md) for the full architecture and build log.
+system built on Google's Agent Development Kit (ADK). Give it a company name and it:
+
+1. **Gathers** filings, market, and sentiment data in parallel (`argus/agents/gather.py`) — three
+   specialist agents, each writing to its own session-state key.
+2. **Computes** real financial metrics — YoY growth, margins, CAGR, debt trend, price volatility —
+   via executed Python (pandas/numpy), never LLM-estimated (`argus/agents/quant.py`).
+3. **Drafts** an analytical thesis citing only those computed numbers (`argus/agents/synthesis.py`).
+4. **Red-teams itself**: a Critic checks the draft against the evidence for unsupported claims or
+   cherry-picking; a Refiner fixes what it finds. Loops until it passes or 4 iterations run out
+   (`argus/agents/critic.py`, `refiner.py`).
+
+Runs entirely on the Gemini API free tier, no cloud project required.
 
 ## Running it
 
