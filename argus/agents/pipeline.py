@@ -7,6 +7,14 @@ Lives in its own file (not argus/agent.py) so the Orchestrator (Stage 4
 Part B) can import and wrap it as an AgentTool without a circular import —
 argus/agent.py now just points root_agent at the Orchestrator, which reaches
 for this whole pipeline as one of its tools for full-analysis requests.
+
+Long-term memory (Stage 5 Part A, spec SM2) is deliberately NOT wired here
+as an after_agent_callback — confirmed live that a callback anywhere in
+this pipeline cannot reach the app's real memory service, because
+AgentTool (how the Orchestrator invokes this whole pipeline) runs it
+through a brand-new, throwaway MemoryService instance every time (see
+argus/tools/memory.py's module docstring for the source-confirmed why).
+The persist step lives as an explicit orchestrator-level tool instead.
 """
 
 from google.adk.agents.loop_agent import LoopAgent

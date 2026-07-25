@@ -44,6 +44,22 @@ as a fourth routing case, alongside narrow/broad — for qualitative
 background questions (competitive position, leadership changes) that no
 structured data tool answers. Genuinely optional: the Orchestrator only
 reaches for it when asked, never as part of narrow or broad routing.
+
+Stage 5 Part A adds two memory tools (argus/tools/memory.py) to the
+broad-request branch: recall_prior_findings (a long-term MemoryService
+lookup, separate from session.state, so a second run on the same entity
+can "start warm" — spec SM2) and remember_finding (persists this run's
+result once it succeeds). Recalled text is presentation-only context
+("ARGUS has looked at this before") — never treated as evidence for THIS
+run; the pipeline's own fresh, verified result is still the actual answer.
+
+remember_finding is called explicitly by the Orchestrator, not wired as a
+callback on full_analysis_pipeline itself — confirmed live that a
+callback there cannot reach the app's real memory service, because
+AgentTool runs the wrapped pipeline through a brand-new, throwaway
+MemoryService every time (see argus/tools/memory.py for the full,
+source-confirmed explanation). Only code running at THIS level, in the
+orchestrator's own invocation, has the real one.
 """
 
 import json
@@ -58,6 +74,7 @@ from argus.agents.retrieval import retrieval_agent
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
+from argus.tools.memory import recall_prior_findings, remember_finding
 
 _REPLAN_BUDGET = 1
 _REPLAN_STATE_KEY = "meta.replan_count"
@@ -125,10 +142,19 @@ orchestrator_agent = Agent(
         "narrow or broad paths below.\n"
         "- A broad request (\"analyze X\", \"give me a full picture\", "
         "\"due diligence on X\", or anything needing computed metrics, a "
-        "thesis, or a confidence level) → call full_analysis_pipeline, "
-        "THEN ALWAYS call check_gather_status before presenting anything "
-        "— never decide from the thesis text alone whether data was "
+        "thesis, or a confidence level) → first call recall_prior_findings "
+        "with the company name, THEN call full_analysis_pipeline, THEN "
+        "ALWAYS call check_gather_status before presenting anything — "
+        "never decide from the thesis text alone whether data was "
         "actually found.\n"
+        "  - If recall_prior_findings returned found=true, open your "
+        "final answer with one short sentence noting ARGUS has analyzed "
+        "this company before (e.g. 'ARGUS has looked at this company "
+        "before — prior finding: ...'). This is continuity context only "
+        "— never treat a recalled number as verified by the current run, "
+        "and never let it replace or alter the pipeline's own fresh "
+        "result. If found=false, say nothing about it; a first-time "
+        "analysis is normal, not a gap to apologize for.\n"
         "  - If gather_ok is true AND this was your first attempt (the "
         "name you called it with matches what the user asked for): "
         "present the pipeline's result to the user VERBATIM — it is "
@@ -148,6 +174,12 @@ orchestrator_agent = Agent(
         "they asked], so here's an analysis of [name] instead:'). Never "
         "present a substituted company's analysis as if it directly "
         "answered the original request.\n"
+        "  - In EITHER success case above (first attempt, or after a "
+        "disclosed retry): also call remember_finding once — it takes no "
+        "arguments, it reads the result straight from this session's own "
+        "state — so a future request about this company starts warm. Do "
+        "this after presenting your answer; a failure here is harmless "
+        "and never something to mention to the user.\n"
         "  - If gather_ok is still false (may_retry is now false, or the "
         "retry also failed): stop. Tell the user plainly that no data "
         "was found, even after checking for a close match, and name the "
@@ -163,6 +195,8 @@ orchestrator_agent = Agent(
         AgentTool(full_analysis_pipeline),
         AgentTool(retrieval_agent),
         check_gather_status,
+        recall_prior_findings,
+        remember_finding,
     ],
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,

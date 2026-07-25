@@ -30,6 +30,11 @@ If the requested company isn't found, the Orchestrator gets **one bounded retry*
 available name and tries again, disclosing the substitution rather than silently swapping it in. A
 genuinely nonexistent request still fails gracefully after that one attempt, never looping.
 
+A broad analysis also checks (and updates) **long-term memory**: before running, the Orchestrator asks
+whether ARGUS has looked at this company before; after a successful run, it saves a one-line distilled
+finding for next time (`argus/tools/memory.py`) — so a second request about the same company, even in a
+brand-new session, starts warm.
+
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
 whole system: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
@@ -164,3 +169,21 @@ Run the test suite (pure Python, no API calls, no cost):
 
   **Stage 4 is now fully complete** — Reconciliation, dynamic Orchestrator, bounded re-planning, and
   RAG-as-tool, all built and verified live, one part at a time.
+- **Stage 5, Part A (2026-07-25)** — Long-term memory. `recall_prior_findings` and `remember_finding`
+  (`argus/tools/memory.py`) are both tools the Orchestrator calls itself: before a broad analysis, check
+  whether ARGUS has a prior distilled finding for this company; after a successful run, save one. This
+  is a genuinely different store from `session.state` — it persists across sessions, not just across
+  turns in one chat.
+
+  The first design put the save step in an `after_agent_callback` on `full_analysis_pipeline` instead —
+  it looked like the natural place ("the run just finished, persist it"), passed every test, and ran
+  with no visible error. It was also completely broken: `full_analysis_pipeline` only ever runs as an
+  `AgentTool` from the Orchestrator, and ADK's `AgentTool` runs the wrapped agent through a brand-new,
+  throwaway memory service every single call — writes landed somewhere real, just somewhere nobody would
+  ever read from again. Found live only because a second run's memory lookup came back empty despite a
+  clean first run with no errors anywhere in the trace. Fixed by moving the save into an explicit tool
+  on the Orchestrator itself, the one place actually connected to the app's real memory store.
+
+  Verified live end-to-end: asked for a full analysis of Acme Corp — no prior finding, pipeline ran,
+  finding saved. Started a genuinely new chat session and asked again — the recall tool found the exact
+  sentence the first run saved. 7 new pytest tests, 38 total project-wide.
