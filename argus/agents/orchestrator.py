@@ -38,6 +38,12 @@ Session-scoped, not per-entity — a known simplification (same precedent
 as meta.tool_call_count); good enough for a single request's worth of
 retrying, not meant to survive many unrelated failures across one long
 session.
+
+Also wraps the Retrieval Agent (Stage 4 Part D, spec's optional RAG path)
+as a fourth routing case, alongside narrow/broad — for qualitative
+background questions (competitive position, leadership changes) that no
+structured data tool answers. Genuinely optional: the Orchestrator only
+reaches for it when asked, never as part of narrow or broad routing.
 """
 
 import json
@@ -48,6 +54,7 @@ from google.adk.tools.tool_context import ToolContext
 
 from argus.agents.gather import filings_agent, market_agent, sentiment_agent
 from argus.agents.pipeline import full_analysis_pipeline
+from argus.agents.retrieval import retrieval_agent
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
@@ -110,6 +117,12 @@ orchestrator_agent = Agent(
         "result and present it as a clear, readable answer — do not add "
         "facts beyond what the tool returned. If it's an error, tell the "
         "user which companies ARE available.\n"
+        "- A qualitative background question that isn't in the financial "
+        "data — competitive position, strategic outlook, leadership or "
+        "governance changes — → call retrieval_agent. Present what it "
+        "finds as-is; if it found nothing relevant, say so rather than "
+        "guessing. This is an optional extra source, not part of the "
+        "narrow or broad paths below.\n"
         "- A broad request (\"analyze X\", \"give me a full picture\", "
         "\"due diligence on X\", or anything needing computed metrics, a "
         "thesis, or a confidence level) → call full_analysis_pipeline, "
@@ -148,6 +161,7 @@ orchestrator_agent = Agent(
         AgentTool(market_agent),
         AgentTool(sentiment_agent),
         AgentTool(full_analysis_pipeline),
+        AgentTool(retrieval_agent),
         check_gather_status,
     ],
     **MODEL_GUARDRAILS,

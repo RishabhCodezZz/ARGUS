@@ -6,6 +6,10 @@ reads the request and decides how much of the system it actually needs:
 
 - **Narrow question** (just the price, just the filings, just recent news) → routes directly to the one
   matching specialist agent and formats its answer. The other specialists never run.
+- **Qualitative background question** (competitive position, strategic outlook, leadership/governance —
+  nothing a numeric tool can answer) → routes to a Retrieval agent that searches an internal knowledge
+  base of analyst notes (`argus/agents/retrieval.py`, `argus/tools/knowledge_base.py`) and reports back
+  what it finds, without inventing anything beyond it.
 - **Broad request** ("analyze X", "full due-diligence on X") → routes to the complete pipeline:
   1. **Gathers** filings, market, and sentiment data in parallel (`argus/agents/gather.py`).
   2. **Computes** real financial metrics — YoY growth, margins, CAGR, debt trend, price volatility —
@@ -111,8 +115,8 @@ Run the test suite (pure Python, no API calls, no cost):
   performance as a 'positive' record revenue year... whereas actual filed figures for FY2024 revealed a
   net loss."* Acme Corp (the clean company) produces zero contradictions. 25 pytest tests total.
 
-  Stage 4 also covers a dynamic Orchestrator, bounded re-planning, and RAG-as-tool — still in progress,
-  tracked as Parts B-D.
+  Stage 4 also covers a dynamic Orchestrator, bounded re-planning, and RAG-as-tool, tracked as Parts B-D
+  below.
 - **Stage 4, Part B (2026-07-24)** — Dynamic Orchestrator. `orchestrator_agent` is now `root_agent`,
   replacing the old fixed pipeline as the entry point. It's a plain `LlmAgent` with 4 `AgentTool`s: the
   three gather specialists individually, plus the entire existing pipeline wrapped whole as
@@ -143,3 +147,20 @@ Run the test suite (pure Python, no API calls, no cost):
   still-correct thesis. This test needed two full pipeline runs in one turn, which sits right at the
   free tier's 15-requests/minute ceiling — confirmed live that this quota is per-project, not per-key
   (a second API key hit the identical limit immediately).
+- **Stage 4, Part D (2026-07-25)** — RAG-as-tool. `retrieval_agent` (`argus/agents/retrieval.py`) is a
+  plain `LlmAgent` wrapping one new tool, `retrieve_knowledge` (`argus/tools/knowledge_base.py`), over a
+  new mock knowledge base (`data/knowledge_base/{acme_corp,globex}.json`) of analyst-note-style
+  documents — competitive landscape, strategic outlook, leadership/governance. Retrieval itself is
+  deliberately a stub, keyword overlap rather than embeddings/vector search, matching the spec's own
+  framing of RAG as "one subordinate tool among many," not a required path. Wired into the Orchestrator
+  as a fourth `AgentTool` with its own routing branch: qualitative background questions that no
+  structured data tool can answer go here, writing to a new `retrieval.context` state key.
+
+  Verified live: asking *"What's Globex's competitive position in its industry?"* routed to
+  `retrieval_agent` alone — a genuinely new third path, distinct from the narrow-specialist and
+  broad-pipeline routes — which retrieved both the "Competitive Landscape" and "Strategic Outlook and
+  Risk Factors" documents and synthesized a faithful answer with no facts beyond what they said. 6 new
+  pytest tests, 31 total project-wide.
+
+  **Stage 4 is now fully complete** — Reconciliation, dynamic Orchestrator, bounded re-planning, and
+  RAG-as-tool, all built and verified live, one part at a time.

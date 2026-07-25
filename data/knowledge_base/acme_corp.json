@@ -1,0 +1,17 @@
+{
+  "company": "Acme Corp",
+  "documents": [
+    {
+      "title": "Competitive Landscape",
+      "text": "Acme Corp competes in the mid-market industrial manufacturing segment, primarily against larger diversified conglomerates and a handful of regional specialty fabricators. Its niche is automated production lines for mid-size manufacturers who cannot justify the capital outlay of the largest automation vendors. Acme's Columbus, OH plant gives it a logistics advantage serving Midwest and Rust Belt customers, with shorter lead times than competitors shipping from coastal facilities. Barriers to entry in this niche are moderate: the technical know-how is not exotic, but long-standing customer relationships and reliability track records are difficult for new entrants to replicate quickly."
+    },
+    {
+      "title": "Strategic Outlook",
+      "text": "Management has signaled a multi-year push toward higher-margin automated manufacturing lines, exemplified by the new automated line commissioned at the Columbus plant. The stated strategy is to reduce reliance on lower-margin legacy product lines over time while funding this transition through disciplined capital allocation rather than debt issuance, consistent with the company's historically conservative balance sheet. Risks to this outlook include input cost inflation for steel and specialty components, and customer concentration in cyclical industrial end markets."
+    },
+    {
+      "title": "Leadership and Governance",
+      "text": "Acme Corp's leadership team has been largely stable over the past five years, with low executive turnover relative to industry peers. The board has emphasized capital discipline, reflected in the modest debt growth and the recent share buyback program. No governance concerns or related-party transaction disclosures are on record."
+    }
+  ]
+}
