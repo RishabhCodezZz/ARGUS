@@ -74,6 +74,17 @@ sub-agent's state_delta to the parent but NOT its long_running_tool_ids —
 so a pause raised inside full_analysis_pipeline would be silently
 swallowed at that boundary, exactly like the memory write was in Part A.
 See principle 18 for the general form of this finding.
+
+Stage 5 Part C adds save_memo (spec agent #14, argus/tools/memo.py): a
+DETERMINISTIC tool, not another LlmAgent, that persists the final thesis
+as a real markdown artifact. By the time it's called the thesis has
+already been drafted, red-teamed, verified, and gate-cleared, and this
+Orchestrator's own instruction already forbids paraphrasing it — running
+it through yet another LLM call here would reintroduce exactly the risk
+that whole chain removes, for one more API call. Called only after an
+auto-approval or a human approval, same gating as remember_finding, and
+for the same reason: a memo saved before the HITL Gate decides would
+persist a rejected analysis to disk before a human ever saw it.
 """
 
 import json
@@ -90,6 +101,7 @@ from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 from argus.tools.hitl import evaluate_gate, record_human_decision, request_human_approval
+from argus.tools.memo import save_memo
 from argus.tools.memory import recall_prior_findings, remember_finding
 
 _REPLAN_BUDGET = 1
@@ -225,11 +237,14 @@ orchestrator_agent = Agent(
         "it anyway with an explicit caveat that a second review also "
         "flagged it below the confidence bar — do not request a third "
         "human review.\n"
-        "    - Call remember_finding once, after presenting, ONLY when "
-        "the final outcome was auto-approved or human-approved — never "
-        "after a rejection. It takes no arguments and reads straight "
-        "from this session's own state; a failure here is harmless and "
-        "never something to mention to the user.\n\n"
+        "    - After presenting, ONLY when the final outcome was "
+        "auto-approved or human-approved — never after a rejection — "
+        "call BOTH remember_finding AND save_memo (each takes no "
+        "arguments, each reads straight from this session's own state). "
+        "A failure in either is harmless and never something to mention "
+        "to the user. If save_memo returns saved=true, close with one "
+        "short line naming the saved filename so the user knows a memo "
+        "was written; if saved=false, say nothing about it.\n\n"
         "If a request is ambiguous between narrow and broad, prefer the "
         "full pipeline — a more thorough answer is a safer default than a "
         "too-narrow one."
@@ -246,6 +261,7 @@ orchestrator_agent = Agent(
         evaluate_gate,
         LongRunningFunctionTool(request_human_approval),
         record_human_decision,
+        save_memo,
     ],
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,

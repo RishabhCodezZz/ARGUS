@@ -12,6 +12,7 @@ __pycache__/
 # ADK local artifacts
 *.db
 *.sqlite3
+.adk/
 
 # OS
 .DS_Store

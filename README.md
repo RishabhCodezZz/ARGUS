@@ -40,6 +40,10 @@ Before presenting a broad result, it passes through a **human-in-the-loop gate**
 anything below the bar **genuinely pauses the run** and asks a human to approve, reject with a reason,
 or redirect scope, resuming only once they reply.
 
+A released result is also saved as a real **markdown memo artifact**, not just chat text
+(`argus/tools/memo.py`) — the verified thesis copied verbatim into a downloadable file, never
+regenerated through another model call.
+
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
 whole system: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
@@ -215,3 +219,30 @@ Run the test suite (pure Python, no API calls, no cost):
   replying `{"decision": "reject", "reason": "..."}` instead withholds the analysis entirely, states
   the reason, and correctly skips saving to memory. `redirect` is implemented but not live-verified —
   a disclosed gap given free-tier quota cost. 7 new pytest tests, 45 total project-wide.
+- **Stage 5, Parts C + D (2026-08-01)** — Memo artifacts and streaming. **Stage 5 is now fully
+  complete.** `save_memo` (`argus/tools/memo.py`) writes the final approved thesis to a real,
+  downloadable markdown artifact — spec agent #14, implemented as a plain tool rather than another
+  `LlmAgent`, since the thesis is already drafted, red-teamed, verified, and gate-cleared by the time
+  it runs; regenerating it through one more model call would reintroduce the exact risk that chain
+  exists to remove, for an API call the free-tier quota can't spare. Gated by the same
+  approved-only instruction clause as `remember_finding`, and called alongside it. Streaming needed no
+  new code at all: the Dev UI already ships a working toggle, so Part D was pure verification.
+
+  This closes out a running finding across the whole stage: `AgentTool`'s inner runner now has a
+  complete, checked four-row picture — session state and artifacts cross the boundary back to the
+  parent; long-term memory, the long-running-pause signal, and (confirmed this part) the streaming
+  mode do not. That last one explains, precisely, why streaming works for the Orchestrator's own turns
+  and not for anything happening inside the wrapped pipeline.
+
+  Verified live: two independent auto-approved runs each correctly saved a memo artifact; fetching it
+  back and decoding it as UTF-8 confirmed the embedded thesis matches session state byte-for-byte (a
+  first, naive decode attempt falsely suggested a mismatch — a bug in the verification script's
+  character handling, caught and fixed mid-check, not in the product). The streaming split was
+  confirmed for free from server logs already produced by these same runs — zero extra API calls —
+  showing `stream: True` for every Orchestrator-level model call and `stream: False` for every call
+  made inside the pipeline, consistently across three separate runs. The reject-then-no-memo path is
+  verified by construction rather than an independent live test this time: the adversarial prompt that
+  reliably triggered escalation in Part B didn't reproduce a sub-threshold score on repeat attempts
+  today (real LLM output variance), and `save_memo`'s gating instruction is identical to
+  `remember_finding`'s, already proven correctly followed on rejection. 10 new pytest tests, 55 total
+  project-wide.
