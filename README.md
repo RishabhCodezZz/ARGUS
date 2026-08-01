@@ -35,6 +35,11 @@ whether ARGUS has looked at this company before; after a successful run, it save
 finding for next time (`argus/tools/memory.py`) — so a second request about the same company, even in a
 brand-new session, starts warm.
 
+Before presenting a broad result, it passes through a **human-in-the-loop gate**
+(`argus/tools/hitl.py`): a high-groundedness, critic-passed result auto-releases with no interruption;
+anything below the bar **genuinely pauses the run** and asks a human to approve, reject with a reason,
+or redirect scope, resuming only once they reply.
+
 Four guardrail callbacks (`argus/callbacks/guardrails.py`) run on every model/tool call across the
 whole system: blocking direct trade-advice requests, stripping unhedged action language from any
 agent's output, enforcing a per-session tool-call budget, and flagging instruction-like text inside
@@ -187,3 +192,26 @@ Run the test suite (pure Python, no API calls, no cost):
   Verified live end-to-end: asked for a full analysis of Acme Corp — no prior finding, pipeline ran,
   finding saved. Started a genuinely new chat session and asked again — the recall tool found the exact
   sentence the first run saved. 7 new pytest tests, 38 total project-wide.
+- **Stage 5, Part B (2026-08-01)** — Human-in-the-Loop Gate. `evaluate_gate`, `request_human_approval`
+  (a `LongRunningFunctionTool` — the run genuinely suspends), and `record_human_decision`
+  (`argus/tools/hitl.py`) are three more Orchestrator-level tools, not a separate agent: a high-
+  groundedness, critic-passed result auto-releases; anything below the bar pauses for a human to
+  approve, reject with a reason, or redirect scope. The threshold (0.98) is set against real observed
+  scores — a clean run scores 1.00, Stage 3's adversarial prompt scores ≈0.95 — so both paths are
+  reachable with genuine data, not contrived inputs.
+
+  Same root cause as Part A, this time caught by reading ADK's source before writing any code instead
+  of live: `AgentTool` doesn't forward a paused sub-agent's long-running signal to its parent, only
+  its state — so the gate has to live at the Orchestrator level, exactly like the memory tools. A
+  second bug WAS only found live: the model initially explained an escalation in chat text without
+  actually calling the tool that pauses the run, so nothing genuinely paused — the same "narrates
+  instead of acting" gap `exit_loop` already had back in Stage 2, fixed the same way (explicit "these
+  are two parts of one action" instruction language).
+
+  Verified live across all three reachable outcomes with real data: a clean run auto-approves with no
+  interruption; the Stage 3 adversarial prompt reliably escalates and genuinely suspends (confirmed via
+  the run's `longRunningToolIds`, not assumed); replying `{"decision": "approve"}` in the Dev UI's
+  pending-call box resumes the run, discloses "(Released after human review)", and saves to memory;
+  replying `{"decision": "reject", "reason": "..."}` instead withholds the analysis entirely, states
+  the reason, and correctly skips saving to memory. `redirect` is implemented but not live-verified —
+  a disclosed gap given free-tier quota cost. 7 new pytest tests, 45 total project-wide.

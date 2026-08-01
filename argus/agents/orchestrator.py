@@ -60,12 +60,27 @@ AgentTool runs the wrapped pipeline through a brand-new, throwaway
 MemoryService every time (see argus/tools/memory.py for the full,
 source-confirmed explanation). Only code running at THIS level, in the
 orchestrator's own invocation, has the real one.
+
+Stage 5 Part B adds the HITL Gate (spec HITL1-3, argus/tools/hitl.py) to
+the broad-request branch, right after check_gather_status confirms
+success: evaluate_gate deterministically auto-approves a high-groundedness,
+critic-passed result, or escalates to a human via request_human_approval
+(a LongRunningFunctionTool — the run genuinely suspends until a human
+replies in the Dev UI). This is implemented as three Orchestrator-level
+tools, NOT a separate LlmAgent, for the same reason remember_finding is
+one turn up from where it "should" live: confirmed against
+google/adk/tools/agent_tool.py that AgentTool.run_async forwards a wrapped
+sub-agent's state_delta to the parent but NOT its long_running_tool_ids —
+so a pause raised inside full_analysis_pipeline would be silently
+swallowed at that boundary, exactly like the memory write was in Part A.
+See principle 18 for the general form of this finding.
 """
 
 import json
 
 from google.adk.agents.llm_agent import Agent
 from google.adk.tools.agent_tool import AgentTool
+from google.adk.tools.long_running_tool import LongRunningFunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from argus.agents.gather import filings_agent, market_agent, sentiment_agent
@@ -74,6 +89,7 @@ from argus.agents.retrieval import retrieval_agent
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
+from argus.tools.hitl import evaluate_gate, record_human_decision, request_human_approval
 from argus.tools.memory import recall_prior_findings, remember_finding
 
 _REPLAN_BUDGET = 1
@@ -155,35 +171,65 @@ orchestrator_agent = Agent(
         "and never let it replace or alter the pipeline's own fresh "
         "result. If found=false, say nothing about it; a first-time "
         "analysis is normal, not a gap to apologize for.\n"
-        "  - If gather_ok is true AND this was your first attempt (the "
-        "name you called it with matches what the user asked for): "
-        "present the pipeline's result to the user VERBATIM — it is "
-        "already drafted, red-teamed, and groundedness-checked; "
-        "paraphrasing risks introducing an error into something already "
-        "verified.\n"
         "  - If gather_ok is false and may_retry is true: pick whichever "
         "name in available_companies is the closest match to what the "
         "user actually asked for, and call full_analysis_pipeline again "
         "with that corrected name — this is your one refined retry, not "
         "a new unrelated request. Then call check_gather_status again.\n"
-        "  - If gather_ok is true but ONLY after a retry (you had to "
-        "substitute a different company name than the user asked for): "
-        "you MUST say so before the analysis — one sentence stating "
-        "plainly that their exact request wasn't found and this is the "
-        "closest match instead (e.g. 'I couldn't find data for [what "
-        "they asked], so here's an analysis of [name] instead:'). Never "
-        "present a substituted company's analysis as if it directly "
-        "answered the original request.\n"
-        "  - In EITHER success case above (first attempt, or after a "
-        "disclosed retry): also call remember_finding once — it takes no "
-        "arguments, it reads the result straight from this session's own "
-        "state — so a future request about this company starts warm. Do "
-        "this after presenting your answer; a failure here is harmless "
-        "and never something to mention to the user.\n"
         "  - If gather_ok is still false (may_retry is now false, or the "
         "retry also failed): stop. Tell the user plainly that no data "
         "was found, even after checking for a close match, and name the "
-        "companies that are actually available. Do not keep retrying.\n\n"
+        "companies that are actually available. Do not keep retrying.\n"
+        "  - Once gather_ok is true (first attempt or after a retry): "
+        "ALWAYS call evaluate_gate next, before presenting or saying "
+        "anything about the result. This is a human-in-the-loop safety "
+        "check — never skip it and never decide for yourself whether a "
+        "result looks trustworthy enough to show; that's what this tool "
+        "is for.\n"
+        "    - If auto_approved is true: present the pipeline's result "
+        "to the user VERBATIM — it is already drafted, red-teamed, "
+        "groundedness-checked, AND gate-cleared; paraphrasing risks "
+        "introducing an error into something already verified. (If this "
+        "followed a retry, put the substitution-disclosure sentence "
+        "first — 'I couldn't find data for [what they asked], so here's "
+        "an analysis of [name] instead:' — then the verbatim result.)\n"
+        "    - If auto_approved is false: these are TWO PARTS OF ONE "
+        "ACTION — always do BOTH in the SAME response, never send the "
+        "explanation without also calling the tool: (1) in your own "
+        "response text, tell the user plainly that this result needs "
+        "human review before release, state evaluate_gate's reason, and "
+        "say exactly how to reply — a JSON object like {\"decision\": "
+        "\"approve\"}, {\"decision\": \"reject\", \"reason\": \"...\"}, "
+        "or {\"decision\": \"redirect\", \"scope\": \"...\"}; AND (2) "
+        "call request_human_approval with a one-sentence concern. Do NOT "
+        "present the analysis itself yet, and do not skip the tool call "
+        "— explaining without calling it does not pause anything. This "
+        "tool suspends the run — you will not get a result back from it "
+        "this turn.\n"
+        "    - When the human's reply arrives as this call's result: it "
+        "may be structured JSON or plain text wrapped as {\"result\": "
+        "\"...\"} — read it and interpret their intent as best you can. "
+        "An unclear reply defaults to reject; never guess in favor of "
+        "releasing an unreviewed result. Call record_human_decision with "
+        "your reading of it (decision + reason), THEN:\n"
+        "      - approve → present the analysis verbatim (with the "
+        "retry-disclosure sentence first if applicable), adding one "
+        "clause noting it was released after human review.\n"
+        "      - reject → do NOT present the analysis. State plainly "
+        "that a human reviewer rejected it and give their reason. Do "
+        "not call remember_finding.\n"
+        "      - redirect → call full_analysis_pipeline exactly ONE "
+        "more time with the human's requested scope, then "
+        "check_gather_status and evaluate_gate again. If now "
+        "auto_approved, present it. If STILL not auto_approved, present "
+        "it anyway with an explicit caveat that a second review also "
+        "flagged it below the confidence bar — do not request a third "
+        "human review.\n"
+        "    - Call remember_finding once, after presenting, ONLY when "
+        "the final outcome was auto-approved or human-approved — never "
+        "after a rejection. It takes no arguments and reads straight "
+        "from this session's own state; a failure here is harmless and "
+        "never something to mention to the user.\n\n"
         "If a request is ambiguous between narrow and broad, prefer the "
         "full pipeline — a more thorough answer is a safer default than a "
         "too-narrow one."
@@ -197,6 +243,9 @@ orchestrator_agent = Agent(
         check_gather_status,
         recall_prior_findings,
         remember_finding,
+        evaluate_gate,
+        LongRunningFunctionTool(request_human_approval),
+        record_human_decision,
     ],
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,

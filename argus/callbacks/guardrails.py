@@ -20,7 +20,13 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-_TOOL_CALL_BUDGET = 15
+# Raised from 15 to 20 for Stage 5 Part B: the HITL gate adds up to 3 more
+# calls (evaluate_gate, request_human_approval, record_human_decision) on
+# top of a broad run that live traces already show reaching 9, and a
+# bounded-retry run (two full pipeline passes) legitimately needs more
+# room than that. The system growing a real feature, not the guardrail
+# being loosened to hide a problem.
+_TOOL_CALL_BUDGET = 20
 _BUDGET_STATE_KEY = "meta.tool_call_count"
 
 # SG1: a direct request/instruction for THIS system to recommend a trade.
