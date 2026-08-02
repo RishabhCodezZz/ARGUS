@@ -76,6 +76,33 @@ Run the test suite (pure Python, no API calls, no cost):
    GOOGLE_API_KEY=your-key-here
    ```
 
+## Evaluation harness
+
+CI only runs the free pytest suite. The live `adk eval` evalset and the ablation study both call the
+real Gemini API and are meant to be run on demand, not on every push.
+
+Run the golden evalset (needs `GOOGLE_API_KEY` in `argus/.env`; paced conservatively — a broad
+scenario alone is ~16-20 calls against a 15-req/min free-tier ceiling):
+
+```bash
+NLTK_DISABLE_IMPORT_SECURITY=1 PYTHONPATH="$(pwd)" .venv/Scripts/adk.exe eval argus \
+  eval/argus_evalset.json --config_file_path eval/test_config.json --print_detailed_results
+```
+
+(`NLTK_DISABLE_IMPORT_SECURITY=1` works around a false-positive in nltk's own CWD-import guard,
+triggered here only because `.venv/` happens to live inside the project directory — see
+`argus/eval/custom_metrics.py`'s module docstring.) Run a subset with
+`eval/argus_evalset.json:scenario_id1,scenario_id2`.
+
+Run the ablation study (baseline vs. no-critic vs. no-code-execution, 6 live pipeline runs):
+
+```bash
+PYTHONPATH="$(pwd)" .venv/Scripts/python.exe -m argus.eval.ablation
+```
+
+Progress checkpoints to `.ablation_checkpoint.json` (git-ignored) so a `RESOURCE_EXHAUSTED` mid-run
+resumes instead of re-spending quota on already-completed variant/scenario pairs.
+
 ## Progress log
 
 - **Stage 0 (2026-07-24)** — One `Agent` (`gemini-flash-latest`) with one tool,
@@ -246,3 +273,57 @@ Run the test suite (pure Python, no API calls, no cost):
   today (real LLM output variance), and `save_memo`'s gating instruction is identical to
   `remember_finding`'s, already proven correctly followed on rejection. 10 new pytest tests, 55 total
   project-wide.
+- **Stage 6 (2026-08-02)** — Evaluation harness, live baseline, and ablation study. **This is the
+  portfolio centerpiece.** `argus/eval/custom_metrics.py` holds 4 deterministic `adk eval` metrics
+  (spec EV1) — tool-trajectory, numeric fidelity, independent groundedness, contradiction correctness
+  — all pure re-derivations from the same mock data the agents themselves use, never an LLM judge:
+  this project's "numbers come from code, not vibes" rule applied to the eval harness itself.
+  `eval/argus_evalset.json` covers 8 golden scenarios (not the spec's literal ≥20, deliberately —
+  a single broad scenario alone is ~16-20 live API calls against a 15-req/min free-tier ceiling this
+  whole project has lived under). CI (`.github/workflows/tests.yml`) runs the pytest suite only, never
+  `adk eval`, so it stays free and fast on every push.
+
+  Running the first live batch immediately paid for itself: it surfaced 6 real bugs in the metrics'
+  own number-parsing logic before they ever reached the more expensive broad scenarios — a comma in
+  `"$2,850 million"` silently splitting into two claims, a `$` between a minus sign and its digits
+  flipping a real net loss positive, a bare year range (`"2021-2025"`) misparsing the same way, a
+  memo-filename date leaking through the date-stripper because of a boundary-regex edge case, a
+  hyphenated negation phrase (`"No headline-to-filing contradictions"`) missing a same-class match, and
+  a missing 4th grounding source (computed quant metrics, not just raw filings/market/sentiment) that
+  meant every legitimate computed claim in a broad response scored "unfounded" even in a clean run.
+  Every one fixed with regression pytest coverage (90 tests project-wide) and re-verified live. Two
+  more things the harness surfaced are real findings, not bugs: `independent_groundedness` correctly
+  refuses to credit a unit-converted restatement ("$2.85 billion" for a source's "2850 million") as
+  grounded — a genuine, literal-matching characteristic shared with production `claim_matcher.py`, not
+  something to loosen without reopening the fabricated-year-adjacency hole `_MATCH_TOLERANCE` already
+  guards against; and the Orchestrator's bounded re-planning is **not fully reliable** — across 2 live
+  runs of the missing-company scenario it once correctly retried with the closest available match and
+  once gave up immediately with a false "no alternative available" — a disclosed, live-verified gap for
+  a follow-up pass, not fixed this session.
+
+  With the harness itself trustworthy, the live baseline: the 4 narrow scenarios and the 2 clean broad
+  scenarios pass every applicable deterministic metric; the adversarial-injection scenario correctly
+  refuses to incorporate a fabricated 2026 revenue figure injected in the prompt; the missing-company
+  retry scenario is the one genuinely unreliable case, matching the finding above.
+
+  The **ablation study** (`argus/eval/ablation.py`) builds 3 pipeline variants — baseline, one with
+  the critic/refiner loop removed, one with `quant_agent` (code execution) removed entirely — each
+  independently cloned via `BaseAgent.clone()` (confirmed against ADK source: a sub-agent can only
+  have one parent, so the real pipeline's singletons can't be reused directly in a second tree) and
+  run through a real `Runner`, not a simulation. Results, reading the Verifier's own deterministic
+  groundedness score straight from session state:
+
+  | Variant | Acme (clean) | Globex (contradiction) | Derived metrics stated |
+  |---|---|---|---|
+  | baseline | 1.0 | 1.0 | CAGR, margin, YoY growth, volatility |
+  | no critic/refiner | 1.0 | 0.9655 | same, sometimes more granular |
+  | no code execution | 1.0 | 1.0 | **none** |
+
+  The critic/refiner loop gives a small, real groundedness benefit specifically on the harder,
+  messier scenario, with no cost to analytical detail. Removing code execution does **not** cause
+  hallucination — `synthesis_agent`'s explicit instruction to say "the analysis doesn't cover it"
+  rather than invent a number held under live testing in both scenarios — but it does cost *all*
+  derived insight: zero CAGR/margin/growth/volatility claims in either response, only literal
+  restated filing and price figures. The more interesting, more honest result than a naive
+  "no code execution → hallucination" prediction: the guardrail held, and what code execution
+  actually buys is analytical depth under a still-fully-grounded response, not just accuracy.

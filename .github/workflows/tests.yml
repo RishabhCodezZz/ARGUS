@@ -1,0 +1,32 @@
+name: Tests
+
+# Runs the deterministic pytest suite on every push/PR -- pure Python,
+# zero API calls, zero cost (confirmed throughout this project: 55 tests
+# in ~3s locally). Deliberately does NOT run `adk eval`: the live eval
+# harness (eval/argus_evalset.json) invokes the real agent against the
+# real Gemini API, which would need a GOOGLE_API_KEY as a repo secret and
+# would burn free-tier quota (a 15-requests/minute ceiling this project
+# has run into all session) on every single push. Run it on demand
+# locally instead -- see the "Evaluation harness" section of README.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: python -m pytest tests/ -v

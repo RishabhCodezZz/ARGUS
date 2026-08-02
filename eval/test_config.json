@@ -1,0 +1,27 @@
+{
+  "criteria": {
+    "response_match_score": 0.25,
+    "tool_names_trajectory": 1.0,
+    "numeric_fidelity": 0.8,
+    "independent_groundedness": 0.9,
+    "contradiction_correctness": 1.0
+  },
+  "custom_metrics": {
+    "tool_names_trajectory": {
+      "code_config": {"name": "argus.eval.custom_metrics.tool_names_trajectory"},
+      "description": "Tool-call NAMES only, in order -- see argus/eval/custom_metrics.py for why ADK's builtin tool_trajectory_avg_score (which also compares args for exact equality) doesn't fit this project's free-text AgentTool arguments."
+    },
+    "numeric_fidelity": {
+      "code_config": {"name": "argus.eval.custom_metrics.numeric_fidelity"},
+      "description": "Re-runs the quant computation independently from the raw mock data (spec EV1: re-run the code, assert equal) and checks the response's claimed numbers against it."
+    },
+    "independent_groundedness": {
+      "code_config": {"name": "argus.eval.custom_metrics.independent_groundedness"},
+      "description": "Re-derives groundedness from scratch using claim_matcher.py's compute_grounding against the real mock data -- deliberately not trusting the run's own meta.groundedness, which is the system under test grading itself."
+    },
+    "contradiction_correctness": {
+      "code_config": {"name": "argus.eval.custom_metrics.contradiction_correctness"},
+      "description": "Checks the response's contradiction-disclosure behavior against reconciler.py's ground truth for the scenario's company -- did it flag a real contradiction, and stay silent when there wasn't one?"
+    }
+  }
+}
