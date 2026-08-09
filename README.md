@@ -26,7 +26,7 @@ It's built on Google's [Agent Development Kit](https://google.github.io/adk-docs
 - [Evaluation and the ablation experiment](#evaluation-and-the-ablation-experiment)
 - [Project structure](#project-structure)
 - [A few interesting bugs](#a-few-interesting-bugs)
-- [Status](#status)
+- [What's built](#whats-built)
 
 ## Why it's built this way
 
@@ -110,7 +110,7 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 .venv/Scripts/python.exe -m pytest tests/ -v
 ```
 
-90 tests, pure Python, no API calls, runs in about 3 seconds. Every tool has its logic tested directly; the AI-facing parts are verified by running the app live.
+90 tests, pure Python, no API calls, runs in a few seconds. Every tool has its logic tested directly; the AI-facing parts are verified by running the app live.
 
 ## Evaluation and the ablation experiment
 
@@ -158,10 +158,8 @@ Every one of these was found by actually running the system and reading what hap
 
 **The test suite had bugs of its own.** The first real test run said everything passed. Looking closer, one fully correct answer scored as barely accurate. It turned out the *scoring code* had six small bugs of its own — like a comma in "$2,850" being read as two separate numbers instead of one. All six were fixed and re-tested before trusting any of the results.
 
-## Status
+## What's built
 
-Stages 0–6 are complete: the core research pipeline, the self-checking loop, fact-checking and safety guardrails, smart routing with retries and background search, memory, human approval, saved reports, and the full evaluation and ablation harness above.
+The core research pipeline, the self-checking loop, fact-checking and safety guardrails, smart routing with retries and background search, memory, human approval, saved reports, and the full evaluation and ablation harness described above.
 
-**Next:** Stage 7 — deploying this somewhere public, with live tracing.
-
-See [DEVLOG.md](DEVLOG.md) for the complete build history, stage by stage.
+See [DEVLOG.md](DEVLOG.md) for the complete build history.
