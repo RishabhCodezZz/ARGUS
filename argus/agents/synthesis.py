@@ -1,7 +1,7 @@
-"""The Synthesis Agent (spec P1/P2): drafts the analytical thesis from the
+"""The Synthesis Agent: drafts the analytical thesis from the
 reconciled evidence and the Quant agent's computed metrics. This is the
 first agent that "writes" — it must only narrate numbers that already
-exist in analysis.quant, never compute or invent its own (spec TR3).
+exist in analysis.quant, never compute or invent its own.
 
 Reads analysis.reconciled (Stage 4) instead of the three evidence.* keys
 directly — a single vetted bundle that already carries any cross-source

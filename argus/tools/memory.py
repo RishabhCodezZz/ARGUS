@@ -1,7 +1,7 @@
-"""Long-term memory (spec SM2) — distilled per-entity findings persisted via
+"""Long-term memory — distilled per-entity findings persisted via
 ADK's MemoryService, so a later run on the same entity "starts warm". A
 genuinely different store from session.state: state.* is short-term,
-per-run working memory (SM1) that a session's own agents read/write via
+per-run working memory that a session's own agents read/write via
 state_delta/output_key; memory persists ACROSS sessions and is written/read
 through Context.add_events_to_memory / Context.search_memory instead —
 there is no state_keys.py entry for it because it never touches

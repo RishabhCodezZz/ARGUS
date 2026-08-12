@@ -1,7 +1,7 @@
-"""The parallel evidence-gathering phase (spec P1): three independent
+"""The parallel evidence-gathering phase: three independent
 specialists, each with its own mock-data tool, fanned out via ParallelAgent.
 
-Each sub-agent must write to a UNIQUE session.state key (spec OR2) — see
+Each sub-agent must write to a UNIQUE session.state key — see
 argus/state_keys.py. Parallel branches share no state or history with each
 other while running, so each one independently re-reads the user's request
 to figure out which company ("entity") to look up.

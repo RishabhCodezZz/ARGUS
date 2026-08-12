@@ -1,14 +1,14 @@
-"""Guardrail callbacks (spec Section 8): safety enforced in code, not
-prompt-begging (CLAUDE.md principle 5).
+"""Guardrail callbacks: safety enforced in code, not
+prompt-begging.
 
 Deliberately narrow and blanket rather than duplicating what already
 exists: the Critic (Stage 2) does subjective quality review and the
 Verifier (Stage 3) does deep numeric grounding on the final draft. These
 four callbacks are always-on checks that run on every model/tool call
-across the whole pipeline, catching the two spec-named classes of
-prohibited content (SG1: recommending action; SG3: injected instructions
-in fetched content) and a hard SG2 budget — independent of whether any
-particular agent's own instruction happens to resist them.
+across the whole pipeline: blocking trade-advice requests, stripping
+unhedged action language, neutralizing injected instructions found in
+fetched content, and enforcing a hard tool-call budget — independent of
+whether any particular agent's own instruction happens to resist them.
 """
 
 import re
@@ -29,7 +29,7 @@ from google.genai import types
 _TOOL_CALL_BUDGET = 20
 _BUDGET_STATE_KEY = "meta.tool_call_count"
 
-# SG1: a direct request/instruction for THIS system to recommend a trade.
+# A direct request/instruction for THIS system to recommend a trade.
 # Analytical commentary that merely mentions "buy" (e.g. relaying a
 # third-party analyst rating) is not what this blocks - grounding claims
 # like that is the Verifier's job. This is a narrower, harder line: don't
@@ -59,7 +59,7 @@ def _latest_user_text(llm_request: LlmRequest) -> str:
 def block_action_requests(
     callback_context: CallbackContext, llm_request: LlmRequest
 ) -> LlmResponse | None:
-    """before_model_callback (SG1): refuse a request explicitly asking the
+    """before_model_callback: refuse a request explicitly asking the
     system to recommend a trade, before it ever reaches the model."""
     if _ACTION_REQUEST_RE.search(_latest_user_text(llm_request)):
         return LlmResponse(
@@ -83,7 +83,7 @@ def block_action_requests(
 def strip_action_language(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
-    """after_model_callback (SG1): catch unhedged action-advice language
+    """after_model_callback: catch unhedged action-advice language
     that slips into any agent's output, anywhere in the pipeline."""
     if not llm_response.content or not llm_response.content.parts:
         return None
@@ -109,7 +109,7 @@ def strip_action_language(
 def enforce_tool_budget(
     tool: BaseTool, args: dict, tool_context: ToolContext
 ) -> dict | None:
-    """before_tool_callback (SG2): a per-session tool-call budget. Blocks
+    """before_tool_callback: a per-session tool-call budget. Blocks
     further tool calls once exceeded instead of letting a run spiral."""
     count = tool_context.state.get(_BUDGET_STATE_KEY, 0) + 1
     tool_context.state[_BUDGET_STATE_KEY] = count
@@ -133,7 +133,7 @@ def _flag_injection(value):
 def log_and_screen_tool_output(
     tool: BaseTool, args: dict, tool_context: ToolContext, tool_response: dict
 ) -> dict | None:
-    """after_tool_callback (SG3): log provenance, and neutralize any
+    """after_tool_callback: log provenance, and neutralize any
     instruction-like text found INSIDE tool output. Content fetched from an
     external source (filings, news) must be treated as data, never as
     commands. Our mock tools return static local JSON so this can't

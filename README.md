@@ -6,6 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Google ADK](https://img.shields.io/badge/Google%20ADK-2.5.0-4285F4)
 ![Free to run](https://img.shields.io/badge/cost-%240%20(free%20tier)-success)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 ARGUS is a team of AI agents that researches a company for you — instead of one AI trying to do everything itself.
 
@@ -34,7 +35,7 @@ Most agent projects show a demo and stop there. This one also tries to answer a 
 
 There's a test suite that scores every answer with plain code — not by asking another AI if the answer "looks right." And there's an experiment that removes pieces of the system (the self-checking loop, the code-execution step) one at a time, to see what actually breaks when they're gone. The results are in [Evaluation and the ablation experiment](#evaluation-and-the-ablation-experiment).
 
-Every real bug found while building this — and how it was found — is written up in [A few interesting bugs](#a-few-interesting-bugs), with the full list in [DEVLOG.md](DEVLOG.md).
+Every real bug found while building this — and how it was found — is written up in [A few interesting bugs](#a-few-interesting-bugs), with the full list in [DEVLOG.md](DEVLOG.md). The reasoning behind specific design choices (why mock data, why some agents make zero LLM calls, why a few things depart from the more obvious design) is in [DECISIONS.md](DECISIONS.md).
 
 ## What it can do
 
@@ -70,7 +71,7 @@ flowchart TD
     H -->|No| HU[Ask a human] --> M
 ```
 
-If the company you ask about isn't found, it tries the closest match once — and always tells you it did, instead of quietly swapping it in.
+If the company you ask about isn't found, it's designed to retry once with the closest match and disclose that it did, instead of quietly swapping it in. Live testing found this retry doesn't always trigger — see [What's built](#whats-built) for the honest status.
 
 ## Tech stack
 
@@ -79,25 +80,36 @@ If the company you ask about isn't found, it tries the closest match once — an
 | **Framework** | [Google ADK](https://google.github.io/adk-docs/) 2.5.0 (Python) |
 | **Model** | Gemini 3.5 Flash-Lite (free tier) |
 | **Math** | Real pandas / numpy code, executed — not AI-estimated |
-| **Testing** | pytest, 90 tests, no API calls needed |
+| **Testing** | pytest, 100 tests, no API calls needed |
 | **CI** | GitHub Actions, runs the tests on every push |
 | **Data** | Mock financial data for two made-up companies |
 
 ## Getting started
 
 ```bash
-# 1. Set up a virtual environment
+# 1. Create a virtual environment
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r requirements.txt
 
-# 2. Get a free API key: https://aistudio.google.com -> "Get API key"
-# 3. Create argus/.env:
+# 2. Activate it
+#    Windows (cmd):        .venv\Scripts\activate
+#    Windows (PowerShell): .venv\Scripts\Activate.ps1
+#    macOS / Linux:         source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Get a free API key: https://aistudio.google.com -> "Get API key"
+# 5. Create argus/.env (or copy argus/.env.example and fill it in):
 #      GOOGLE_GENAI_USE_VERTEXAI=FALSE
 #      GOOGLE_API_KEY=your-key-here
 
-# 4. Run it
-.venv/Scripts/adk.exe web --port 8000
+# 6. Run it
+python -m google.adk.cli web --port 8000
 ```
+
+The commands below assume the virtual environment from step 2 is activated — once it is, `python`
+and `pip` resolve to the venv's own copies on every OS, so no platform-specific paths are needed
+anywhere past this point.
 
 Open `http://localhost:8000`, pick the `argus` app, and try:
 
@@ -107,14 +119,14 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 ## Running the tests
 
 ```bash
-.venv/Scripts/python.exe -m pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
-90 tests, pure Python, no API calls, runs in a few seconds. Every tool has its logic tested directly; the AI-facing parts are verified by running the app live.
+100 tests, pure Python, no API calls, runs in a few seconds. Every tool has its logic tested directly; the AI-facing parts are verified by running the app live.
 
 ## Evaluation and the ablation experiment
 
-There's a set of 8 test scenarios and 4 scoring checks, all plain deterministic code — never another AI grading the answer.
+There's a set of 8 test scenarios and 5 scoring checks (4 custom deterministic metrics plus one built-in text-similarity check) — none of them another AI grading the answer.
 
 The more interesting part is what happens when pieces of the system are removed. Three versions were run side by side on the same two test cases (an easy one and a hard one with a real contradiction in it):
 
@@ -126,7 +138,7 @@ The more interesting part is what happens when pieces of the system are removed.
 
 **What this shows:** removing the code-execution step did *not* make the AI make numbers up. It was told to say "I don't have that number" instead of guessing, and it did every time. But it also stopped giving any calculated insight at all — no growth rate, no margin trend, nothing. The safety instruction worked; what code execution actually adds isn't accuracy, it's *depth*.
 
-Commands to reproduce both the evaluation and the ablation experiment are in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
+This table is a summary. The full run — raw scores, every generated answer in full, and exactly how each column was derived — is committed in [`eval/results/ablation_2026-08-02.md`](eval/results/ablation_2026-08-02.md), alongside the raw JSON output. Commands to reproduce both the evaluation and the ablation experiment are in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
 
 ## Project structure
 
@@ -142,7 +154,7 @@ argus/
   eval/                    test scoring code + the ablation experiment
 data/                      mock company data used for testing
 eval/                      the 8 test scenarios
-tests/                     90 pytest tests
+tests/                     100 pytest tests
 .github/workflows/         CI setup (runs the tests on every push)
 ```
 
@@ -161,5 +173,7 @@ Every one of these was found by actually running the system and reading what hap
 ## What's built
 
 The core research pipeline, the self-checking loop, fact-checking and safety guardrails, smart routing with retries and background search, memory, human approval, saved reports, and the full evaluation and ablation harness described above.
+
+**One known gap, stated plainly:** the retry-with-closest-match behavior is implemented and works in most runs, but live testing found it isn't fully reliable — across repeated tests it sometimes retries correctly and sometimes gives up without retrying. This is a real, disclosed limitation, not a solved feature. Full detail in [DEVLOG.md](DEVLOG.md).
 
 See [DEVLOG.md](DEVLOG.md) for the complete build history.

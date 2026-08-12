@@ -1,15 +1,15 @@
-"""The Orchestrator (spec P5, agent #1): the dynamic, LLM-driven router
+"""The Orchestrator: the dynamic, LLM-driven router
 that replaces a fixed pipeline as the entry point. Fan-out is now
-plan-driven, not hard-coded (spec OR5) — a narrow "what's the price doing"
+plan-driven, not hard-coded — a narrow "what's the price doing"
 question invokes only the Market agent; a broad "analyze X" request invokes
 the full deterministic pipeline (Stages 1-4A, unchanged, wrapped whole).
 
 No formal planner module (e.g. PlanReActPlanner) yet — that mainly adds
 visible step-by-step planning text, not different routing capability, and
-a well-instructed LlmAgent choosing among AgentTools already satisfies
-OR5's actual requirement. Revisit if trace legibility becomes a real need.
+a well-instructed LlmAgent choosing among AgentTools already satisfies the
+same dynamic-routing requirement. Revisit if trace legibility becomes a real need.
 
-Also implements OR4 — bounded re-planning: if gathering reports missing
+Also implements bounded re-planning: if gathering reports missing
 evidence (no data for the exact name given), the Orchestrator may retry
 ONCE with a corrected/refined entity name before giving up. "Refined
 subtask" concretely means: pick the closest match from the failed tool's
@@ -39,7 +39,7 @@ as meta.tool_call_count); good enough for a single request's worth of
 retrying, not meant to survive many unrelated failures across one long
 session.
 
-Also wraps the Retrieval Agent (Stage 4 Part D, spec's optional RAG path)
+Also wraps the Retrieval Agent (Stage 4 Part D, an optional RAG path)
 as a fourth routing case, alongside narrow/broad — for qualitative
 background questions (competitive position, leadership changes) that no
 structured data tool answers. Genuinely optional: the Orchestrator only
@@ -48,7 +48,7 @@ reaches for it when asked, never as part of narrow or broad routing.
 Stage 5 Part A adds two memory tools (argus/tools/memory.py) to the
 broad-request branch: recall_prior_findings (a long-term MemoryService
 lookup, separate from session.state, so a second run on the same entity
-can "start warm" — spec SM2) and remember_finding (persists this run's
+can "start warm") and remember_finding (persists this run's
 result once it succeeds). Recalled text is presentation-only context
 ("ARGUS has looked at this before") — never treated as evidence for THIS
 run; the pipeline's own fresh, verified result is still the actual answer.
@@ -61,7 +61,7 @@ MemoryService every time (see argus/tools/memory.py for the full,
 source-confirmed explanation). Only code running at THIS level, in the
 orchestrator's own invocation, has the real one.
 
-Stage 5 Part B adds the HITL Gate (spec HITL1-3, argus/tools/hitl.py) to
+Stage 5 Part B adds the HITL Gate (argus/tools/hitl.py) to
 the broad-request branch, right after check_gather_status confirms
 success: evaluate_gate deterministically auto-approves a high-groundedness,
 critic-passed result, or escalates to a human via request_human_approval
@@ -73,9 +73,12 @@ google/adk/tools/agent_tool.py that AgentTool.run_async forwards a wrapped
 sub-agent's state_delta to the parent but NOT its long_running_tool_ids —
 so a pause raised inside full_analysis_pipeline would be silently
 swallowed at that boundary, exactly like the memory write was in Part A.
-See principle 18 for the general form of this finding.
+This is a recurring shape across this project: an ADK service crossing
+the AgentTool boundary has to be checked per-service, never assumed —
+state and artifacts cross it, memory and the long-running-pause signal
+don't.
 
-Stage 5 Part C adds save_memo (spec agent #14, argus/tools/memo.py): a
+Stage 5 Part C adds save_memo (argus/tools/memo.py): a
 DETERMINISTIC tool, not another LlmAgent, that persists the final thesis
 as a real markdown artifact. By the time it's called the thesis has
 already been drafted, red-teamed, verified, and gate-cleared, and this

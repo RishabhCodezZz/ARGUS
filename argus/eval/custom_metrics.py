@@ -1,9 +1,9 @@
-"""Custom deterministic eval metrics (spec Section 10, EV1) for `adk eval`.
+"""Custom deterministic eval metrics for `adk eval`.
 
 All four metrics here are pure Python re-derivations from the same mock
 data and matching logic the agents themselves use — never an LLM judge.
-This is CLAUDE.md's core rule ("numbers/decisions come from code, not
-vibes") applied to the eval harness itself: an eval whose metrics are
+This is this project's own core rule ("numbers/decisions come from code,
+not vibes") applied to the eval harness itself: an eval whose metrics are
 LLM guesses would just be trusting the system under test to grade
 itself, the exact thing the Reconciliation Agent (a custom BaseAgent,
 zero LLM calls) was built to avoid doing for headline spin.
@@ -82,7 +82,7 @@ def detect_company(text: str) -> Optional[str]:
 def recompute_quant_metrics(filings: dict, market: dict) -> set[float]:
     """Independently re-derives BOTH the raw data values AND the same
     computed metrics quant_agent produces, straight from the raw mock
-    data — the actual "numeric fidelity" check (spec EV1): re-run the
+    data — the actual "numeric fidelity" check: re-run the
     computation, don't trust the agent's own claimed numbers. Uses
     pandas' default sample-std convention (ddof=1) to match what
     quant_agent's own pandas code produces.
@@ -365,8 +365,8 @@ def numeric_fidelity(
     conversation_scenario=None,
 ) -> EvaluationResult:
     """Re-runs the same quant computation independently from the raw mock
-    data and checks the response's claimed numbers against it — spec
-    EV1's "re-run the code, assert equal", not a trust-the-agent check."""
+    data and checks the response's claimed numbers against it —
+    "re-run the code, assert equal", not a trust-the-agent check."""
     del expected_invocations, conversation_scenario
     per_invocation_results = []
     scores = []

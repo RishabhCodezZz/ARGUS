@@ -1,4 +1,4 @@
-"""The Memo Generator (spec agent #14, SM3): persists the final verified
+"""The Memo Generator: persists the final verified
 thesis as a real markdown artifact — a downloadable file, not just chat
 text.
 
@@ -10,7 +10,7 @@ presenting it in chat. Regenerating it through another LLM call here
 would reintroduce exactly the risk that whole chain exists to remove,
 for one more API call on top of an already-tight free-tier quota. Same
 reasoning as reconciliation.py: where correctness matters more than
-phrasing, use code (CLAUDE.md principle 1, extended to memo generation).
+phrasing, use code, extended here to memo generation too.
 
 save_memo is called by the Orchestrator itself — never wired into
 full_analysis_pipeline, and only AFTER an auto-approval or a human
@@ -24,8 +24,9 @@ MemoryService — IS forwarded across the AgentTool boundary via
 ForwardingArtifactService, so this one tool could technically survive
 being called from inside the pipeline without the boundary eating it;
 it still doesn't live there, for the separate before-the-gate-decides
-reason above. See principle 18 for the full three-service comparison
-(state copied, artifacts forwarded, memory and long-running pauses not).
+reason above. The full comparison across ADK services: state and
+artifacts cross the AgentTool boundary back to the parent; memory and
+the long-running-pause signal don't.
 """
 
 import json

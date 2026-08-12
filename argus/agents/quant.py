@@ -1,7 +1,8 @@
-"""The Quantitative Agent (spec P2): the deterministic truth layer. Reads
+"""The Quantitative Agent: the deterministic truth layer. Reads
 gathered evidence from state and computes real numbers via Gemini's
-built-in code execution (real pandas/numpy) — never estimates (spec G3/TR3,
-CLAUDE.md's non-negotiable principle #1).
+built-in code execution (real pandas/numpy) — never estimates. This is
+the project's core rule applied at the source: numbers come from
+executed code, never from the model narrating a guess.
 
 BuiltInCodeExecutor may only be used alone on an agent — it cannot be
 combined with other tools (verified against current ADK docs). So instead

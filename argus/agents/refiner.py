@@ -1,4 +1,4 @@
-"""The Refiner (spec P3, agent #11): rewrites the draft to address the
+"""The Refiner: rewrites the draft to address the
 Critic's critique. Runs only when the Critic did NOT pass (if it had, the
 Critic's exit_loop call already stopped the loop before Refiner runs again).
 

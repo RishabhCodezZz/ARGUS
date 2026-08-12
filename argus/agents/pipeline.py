@@ -8,7 +8,7 @@ Part B) can import and wrap it as an AgentTool without a circular import —
 argus/agent.py now just points root_agent at the Orchestrator, which reaches
 for this whole pipeline as one of its tools for full-analysis requests.
 
-Long-term memory (Stage 5 Part A, spec SM2) is deliberately NOT wired here
+Long-term memory (Stage 5 Part A) is deliberately NOT wired here
 as an after_agent_callback — confirmed live that a callback anywhere in
 this pipeline cannot reach the app's real memory service, because
 AgentTool (how the Orchestrator invokes this whole pipeline) runs it

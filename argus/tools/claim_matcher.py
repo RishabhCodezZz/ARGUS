@@ -48,7 +48,7 @@ def is_grounded(claim: float, known_numbers: set[float]) -> bool:
     """A claim is grounded if some known number matches within
     _MATCH_TOLERANCE. Some slack is needed since narration rounds slightly
     (e.g. "$812 million" for 812.4) and exact float equality would
-    over-reject — PLAN.md's named pitfall for this exact verifier — but the
+    over-reject on this exact kind of claim — but the
     tolerance must stay small and fixed; see _MATCH_TOLERANCE."""
     return any(abs(claim - known) <= _MATCH_TOLERANCE for known in known_numbers)
 

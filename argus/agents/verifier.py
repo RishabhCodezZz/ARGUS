@@ -1,10 +1,10 @@
-"""The Groundedness Verifier (spec P4, agent #12): the measurable-trust
+"""The Groundedness Verifier: the measurable-trust
 layer. Where the Critic (Stage 2) subjectively red-teams the draft's
 reasoning, this agent does something narrower and deterministic — checks
 every number the draft states as fact against a real matcher tool, and
 produces an auditable meta.groundedness score. Flags ungrounded claims in
-place rather than silently deleting them (PLAN.md's named pitfall for this
-agent: over-rejecting is worse than a visible flag a human can review).
+place rather than silently deleting them: over-rejecting is worse than a
+visible flag a human can review.
 """
 
 from google.adk.agents.llm_agent import Agent

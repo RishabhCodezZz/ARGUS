@@ -1,4 +1,4 @@
-"""The Human-in-the-Loop Gate (spec HITL1-3): auto-approve a high-confidence
+"""The Human-in-the-Loop Gate: auto-approve a high-confidence
 run, or suspend it for a human decision on a low-confidence one.
 
 evaluate_gate is a DETERMINISTIC check — the same "decisions come from
@@ -8,7 +8,7 @@ contradiction detection (Reconciliation), and retry routing
 groundedness score against a threshold and decides for itself whether
 it's good enough — that comparison is arithmetic, so code does it.
 
-request_human_approval is a LongRunningFunctionTool (spec HITL2). Its
+request_human_approval is a LongRunningFunctionTool. Its
 Python body does nothing and MUST return None — confirmed against
 google/adk/flows/llm_flows/functions.py: `if (tool.is_long_running ...)
 and not function_response: return None` skips auto-building a

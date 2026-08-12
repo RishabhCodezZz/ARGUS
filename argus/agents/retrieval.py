@@ -1,4 +1,4 @@
-"""The Retrieval Agent (spec P5, agent #3): the optional RAG path. Wrapped
+"""The Retrieval Agent: the optional RAG path. Wrapped
 as an AgentTool the Orchestrator MAY call for qualitative/background
 questions a structured data tool can't answer — competitive position,
 strategic outlook, leadership changes. Never for numbers; the filings and

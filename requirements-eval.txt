@@ -1,0 +1,10 @@
+# Extra dependencies needed only to run `adk eval` (see the "Evaluation and
+# the ablation experiment" section of README.md). The pytest suite and the
+# app itself do NOT need this file — just requirements.txt.
+#
+# google-adk's [eval] extra pulls in rouge-score, nltk, pandas, and
+# google-cloud-aiplatform[evaluation], among others. Installing it here
+# (rather than baking it into requirements.txt) keeps the base install
+# small for anyone who just wants to run the app or the test suite.
+-r requirements.txt
+google-adk[eval]==2.5.0

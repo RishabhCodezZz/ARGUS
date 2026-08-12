@@ -1,13 +1,14 @@
 name: Tests
 
 # Runs the deterministic pytest suite on every push/PR -- pure Python,
-# zero API calls, zero cost (confirmed throughout this project: 55 tests
-# in ~3s locally). Deliberately does NOT run `adk eval`: the live eval
-# harness (eval/argus_evalset.json) invokes the real agent against the
-# real Gemini API, which would need a GOOGLE_API_KEY as a repo secret and
-# would burn free-tier quota (a 15-requests/minute ceiling this project
-# has run into all session) on every single push. Run it on demand
-# locally instead -- see the "Evaluation harness" section of README.md.
+# zero API calls, zero cost (100 tests, a few seconds locally). Deliberately
+# does NOT run `adk eval`: the live eval harness (eval/argus_evalset.json)
+# invokes the real agent against the real Gemini API, which would need a
+# GOOGLE_API_KEY as a repo secret and would burn free-tier quota (a
+# 15-requests/minute ceiling this project has run into repeatedly) on
+# every single push. Run it on demand locally instead -- see "Evaluation
+# and the ablation experiment" in README.md, and "Reproducing the results"
+# in DEVLOG.md for the exact commands.
 
 on:
   push:

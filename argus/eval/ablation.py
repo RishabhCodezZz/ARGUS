@@ -1,4 +1,4 @@
-"""Ablation study (spec Section 10, EV1's companion): measures how much the
+"""Ablation study: measures how much the
 critic/refiner loop (Stage 2) and code execution (Stage 1's Quant agent)
 each actually contribute to groundedness, rather than assuming they help.
 

@@ -1,6 +1,7 @@
 """Mock data tools — load hand-authored JSON from data/ instead of hitting
-real filings/market/news APIs (PLAN.md: "mock data is a feature, not a
-shortcut"). Each gather specialist (Stage 1) gets exactly one of these.
+real filings/market/news APIs. Deliberate: it decouples learning agent
+architecture from wrangling real data-API auth and rate limits (see
+DECISIONS.md). Each gather specialist (Stage 1) gets exactly one of these.
 """
 
 import json
@@ -28,36 +29,6 @@ def _load(name: str, filename: str) -> dict:
     path = _DATA_DIR / slug / filename
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def get_company_snapshot(name: str) -> dict:
-    """Return a basic company snapshot (sector, size, latest-year financials).
-
-    Use this whenever the user asks about a specific company by name, e.g.
-    "tell me about Acme Corp" or "what does Globex do". The lookup is
-    case-insensitive. Only Acme Corp and Globex exist in this mock dataset.
-
-    Args:
-        name: The company name as mentioned by the user.
-
-    Returns:
-        A dict with company details on success, or a dict with an "error"
-        key naming the companies that are actually available if not found.
-    """
-    filings = _load(name, "filings.json")
-    if "error" in filings:
-        return filings
-    latest = filings["fiscal_years"][-1]
-    return {
-        "name": filings["company"],
-        "sector": filings["sector"],
-        "founded": filings["founded"],
-        "employees": filings["employees"],
-        "headquarters": filings["headquarters"],
-        "latest_fiscal_year": latest["year"],
-        "revenue_usd_millions": latest["revenue_usd_millions"],
-        "net_income_usd_millions": latest["net_income_usd_millions"],
-    }
 
 
 def get_filings(name: str) -> dict:

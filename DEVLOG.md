@@ -208,16 +208,73 @@ Every stage of this project, what was built, and how it was verified live. See t
   independently cloned via `BaseAgent.clone()` (confirmed against ADK source: a sub-agent can only
   have one parent, so the real pipeline's singletons can't be reused directly in a second tree) and
   run through a real `Runner`, not a simulation. Full results table in the main README.
+- **Portfolio-readiness pass (2026-08-12)** — a full external-reviewer audit of the repo (as it would
+  look to someone who only ever sees the 48 tracked files, never this log) surfaced real problems that
+  the project's own "verify all claims" discipline had missed on itself:
+
+  The most serious: `README.md` stated the bounded-retry feature as reliably working, while this very
+  log already documented it as ~50% reliable across live testing — a genuine contradiction between two
+  public files, caught only by deliberately cross-reading them against each other. Fixed by making the
+  README state the same honest, disclosed status this log already had; the disclosure is the strength,
+  hiding it was the liability. The ablation study's headline result also had zero committed evidence —
+  a strong finding resting entirely on prose. Fixed by committing the real completed run
+  (`eval/results/ablation_2026-08-02.md` and its raw JSON), so anyone can check it, not just trust it.
+  The documented `adk eval` command also couldn't run from a fresh clone (`requirements.txt` didn't
+  include the extras `google-adk[eval]` needs), and every setup command was Windows-only despite CI
+  proving the project runs fine on Linux — both fixed (`requirements-eval.txt`; cross-platform
+  `python -m` invocations throughout).
+
+  A second class of finding: 21 tracked Python files cited `CLAUDE.md`, `PLAN.md`, and internal spec
+  IDs (`spec P5`, `principle 18`, `agent #14`, `SG1-3`, `OR2`, `SM2`, `EV1`, …) that are all
+  git-ignored — every one a dead pointer to an external reader, and collectively they made the repo
+  read like a private workspace carved down for publication rather than a standalone project. Fixed by
+  rewriting every citation as inline plain-language rationale instead of a pointer — the reasoning was
+  almost always already spelled out in the surrounding prose, so nothing substantive was lost. The
+  design rationale that genuinely had nowhere public to live now does: a new `DECISIONS.md`.
+
+  A few smaller stale artifacts, all now fixed: the CI workflow's own comment still said "55 tests"
+  and pointed at a README section that no longer exists; `argus/config.py` shipped a `TEMPORARY:`
+  note-to-self from Stage 1 about switching models "once the pipeline is built" — it was built, and
+  the real decision (keep Flash-Lite, re-confirmed at Stage 6 for stated reasons) was only ever written
+  down in the gitignored `CLAUDE.md`; `tests/test_memory.py` named a function
+  (`persist_finding_to_memory`) that doesn't exist — it's `remember_finding`; and one genuinely dead
+  tool (`get_company_snapshot`, a Stage 0 leftover registered on no agent) was removed.
+
+  Also added: a `LICENSE` (MIT) and `argus/.env.example`, both simply absent before. And 10 new tests
+  closing the sharpest fair criticism from the audit — 90 tests and not one touched an agent, a
+  callback, or the orchestrator, the framework code that's the actual subject of the project. Added
+  direct tests for `check_gather_status` (the deterministic retry gate) and `enforce_tool_budget`
+  (the per-session guardrail, including its exact boundary condition), both plain dict-and-counter
+  logic testable with a minimal stand-in `ToolContext` and no live ADK runtime. 100 tests total,
+  zero regressions, all found and fixed before any of it went out the door rather than after.
 
 ## Reproducing the results
 
+Both commands below need the eval-only extras, which are deliberately not in the base
+`requirements.txt` (they pull in pandas/nltk/rouge-score, only needed for this):
+
 ```bash
-# Golden evalset (8 scenarios, needs GOOGLE_API_KEY in argus/.env)
-NLTK_DISABLE_IMPORT_SECURITY=1 PYTHONPATH="$(pwd)" .venv/Scripts/adk.exe eval argus \
+pip install -r requirements-eval.txt
+```
+
+Then, needs `GOOGLE_API_KEY` set in `argus/.env`. Run from the repo root in a POSIX shell (bash/zsh —
+Git Bash on Windows, or a native shell on macOS/Linux):
+
+```bash
+# Golden evalset (8 scenarios)
+NLTK_DISABLE_IMPORT_SECURITY=1 PYTHONPATH="$(pwd)" python -m google.adk.cli eval argus \
   eval/argus_evalset.json --config_file_path eval/test_config.json --print_detailed_results
 
 # Ablation experiment (3 pipeline variants, 6 live runs)
-PYTHONPATH="$(pwd)" .venv/Scripts/python.exe -m argus.eval.ablation
+PYTHONPATH="$(pwd)" python -m argus.eval.ablation
 ```
 
-Ablation progress saves to `.ablation_checkpoint.json` (git-ignored), so a rate-limit hit mid-run resumes instead of restarting.
+(`NLTK_DISABLE_IMPORT_SECURITY=1` works around a false-positive in nltk's own CWD-import guard,
+triggered here only because `.venv/` happens to live inside the project directory — see
+`argus/eval/custom_metrics.py`'s module docstring. `python -m google.adk.cli` is the `adk` CLI
+invoked through the venv's active Python, which works identically whether that Python is on
+`.venv/Scripts/` (Windows) or `.venv/bin/` (macOS/Linux) — no need to hardcode either path.)
+
+Ablation progress saves to `.ablation_checkpoint.json` at the repo root (git-ignored, since it's a
+resumable working file — see `eval/results/` for a committed snapshot of a completed run), so a
+rate-limit hit mid-run resumes instead of restarting.

@@ -13,9 +13,21 @@ from google.genai import types
 from argus.callbacks.guardrails import (
     _ACTION_REQUEST_RE,
     _ACTION_STATEMENT_RE,
+    _BUDGET_STATE_KEY,
+    _TOOL_CALL_BUDGET,
     _flag_injection,
+    enforce_tool_budget,
     strip_action_language,
 )
+
+
+class _FakeToolContext:
+    """A minimal stand-in for ADK's ToolContext. enforce_tool_budget only
+    ever touches tool_context.state, so a real dict there satisfies exactly
+    what the function needs -- no live Runner/session required."""
+
+    def __init__(self, state=None):
+        self.state = state or {}
 
 
 def test_action_request_matches_direct_solicitation():
@@ -81,3 +93,39 @@ def test_strip_action_language_leaves_clean_response_untouched():
         )
     )
     assert strip_action_language(callback_context=None, llm_response=response) is None
+
+
+def test_enforce_tool_budget_allows_the_first_call():
+    ctx = _FakeToolContext()
+    result = enforce_tool_budget(tool=None, args={}, tool_context=ctx)
+    assert result is None
+    assert ctx.state[_BUDGET_STATE_KEY] == 1
+
+
+def test_enforce_tool_budget_allows_a_call_exactly_at_the_limit():
+    # count > budget is the block condition, so a count equal to the
+    # budget must still be allowed -- this is the off-by-one that's easy
+    # to get backwards (>= vs >).
+    ctx = _FakeToolContext({_BUDGET_STATE_KEY: _TOOL_CALL_BUDGET - 1})
+    result = enforce_tool_budget(tool=None, args={}, tool_context=ctx)
+    assert result is None
+    assert ctx.state[_BUDGET_STATE_KEY] == _TOOL_CALL_BUDGET
+
+
+def test_enforce_tool_budget_blocks_the_call_that_exceeds_the_limit():
+    ctx = _FakeToolContext({_BUDGET_STATE_KEY: _TOOL_CALL_BUDGET})
+    result = enforce_tool_budget(tool=None, args={}, tool_context=ctx)
+    assert result is not None
+    assert "error" in result
+    assert str(_TOOL_CALL_BUDGET) in result["error"]
+    # still increments -- the count keeps climbing even once blocked,
+    # rather than freezing at the limit
+    assert ctx.state[_BUDGET_STATE_KEY] == _TOOL_CALL_BUDGET + 1
+
+
+def test_enforce_tool_budget_counter_persists_across_calls_on_the_same_context():
+    ctx = _FakeToolContext()
+    for _ in range(_TOOL_CALL_BUDGET):
+        assert enforce_tool_budget(tool=None, args={}, tool_context=ctx) is None
+    # the (budget + 1)-th call on the SAME context is the one that blocks
+    assert enforce_tool_budget(tool=None, args={}, tool_context=ctx) is not None

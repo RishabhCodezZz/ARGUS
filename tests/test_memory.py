@@ -1,8 +1,8 @@
 """Unit tests for argus/tools/memory.py's pure functions — no ADK/API.
 
-recall_prior_findings and persist_finding_to_memory are thin async wrappers
-around a live ToolContext/MemoryService and are verified live in adk web
-instead (same split as check_gather_status in orchestrator.py).
+recall_prior_findings and remember_finding are thin async wrappers around a
+live ToolContext/MemoryService and are verified live in adk web instead
+(same split as check_gather_status in orchestrator.py).
 """
 
 from argus.tools.memory import build_distilled_memory, extract_entity_name

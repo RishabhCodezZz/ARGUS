@@ -1,10 +1,10 @@
-"""The Red-Team Critic (spec P3, agent #10): attacks the drafted thesis
+"""The Red-Team Critic: attacks the drafted thesis
 before a human ever sees it. Checks the draft against the actual evidence
 and computed metrics (not just internal coherence) for unsupported leaps,
 cherry-picking, or claims that don't trace back to a source.
 
-Only the Critic carries exit_loop — per spec OR3, the CRITIC is what
-signals PASS, not the Refiner. Attaching it here means a clean pass stops
+Only the Critic carries exit_loop — the Critic is the one that signals
+PASS, not the Refiner. Attaching it here means a clean pass stops
 the loop immediately without wasting a redundant Refiner call.
 """
 

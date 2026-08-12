@@ -1,4 +1,4 @@
-"""The Reconciliation Agent (spec P5, agent #8): cross-checks facts across
+"""The Reconciliation Agent: cross-checks facts across
 sources and flags contradictions before Synthesis ever drafts a word. A
 custom BaseAgent, not an LlmAgent — the whole point is a check no model
 should grade itself on. See argus/tools/reconciler.py for the actual

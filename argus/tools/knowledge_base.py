@@ -1,13 +1,13 @@
-"""Mock internal-corpus retrieval (spec: Retrieval Agent, agent #3) — the
+"""Mock internal-corpus retrieval for the Retrieval Agent — the
 optional RAG path. Explicitly a stub: real RAG needs embeddings and vector
 similarity search; this uses plain keyword overlap instead, which is
 honest about what it actually is rather than pretending to be semantic
-search running at toy scale. That's a fine stand-in for what the spec
-actually asks of this piece — "RAG exists inside ARGUS, but only as one
-subordinate tool among many" (spec Section 1) — proving the architecture
+search running at toy scale. That's a fine stand-in for the actual design
+goal here — RAG exists inside ARGUS, but only as one
+subordinate tool among many — proving the architecture
 (an optional AgentTool the Orchestrator may or may not call) without
-building real retrieval infrastructure for a component the spec itself
-calls optional.
+building real retrieval infrastructure for a component that's deliberately
+optional in the first place.
 """
 
 import json
