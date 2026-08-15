@@ -13,12 +13,11 @@ from google.adk.agents.llm_agent import Agent
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.model_provider import get_model
 from argus.state_keys import RETRIEVAL_CTX
 from argus.tools.knowledge_base import retrieve_knowledge
 
 retrieval_agent = Agent(
-    model=get_model(MODEL_FLASH),
+    model=MODEL_FLASH,
     name="retrieval_agent",
     description=(
         "Searches an internal knowledge base of analyst notes for "

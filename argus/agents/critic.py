@@ -14,7 +14,6 @@ from google.adk.tools.tool_context import ToolContext
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.model_provider import get_model
 from argus.state_keys import (
     ANALYSIS_QUANT,
     DRAFT_THESIS,
@@ -72,7 +71,7 @@ def _critic_instruction(context: ReadonlyContext) -> str:
 
 
 critic_agent = Agent(
-    model=get_model(MODEL_FLASH),
+    model=MODEL_FLASH,
     name="critic_agent",
     description="Red-teams the draft thesis against the evidence; PASS or a structured critique.",
     instruction=_critic_instruction,

@@ -12,7 +12,6 @@ from google.adk.agents.readonly_context import ReadonlyContext
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.model_provider import get_model
 from argus.state_keys import DRAFT_THESIS
 from argus.tools.claim_matcher import check_grounding
 
@@ -39,7 +38,7 @@ def _verifier_instruction(context: ReadonlyContext) -> str:
 
 
 verifier_agent = Agent(
-    model=get_model(MODEL_FLASH),
+    model=MODEL_FLASH,
     name="verifier_agent",
     description="Checks every numeric claim in the draft against the evidence via a deterministic matcher tool.",
     instruction=_verifier_instruction,
