@@ -102,6 +102,7 @@ from argus.agents.pipeline import full_analysis_pipeline
 from argus.agents.retrieval import retrieval_agent
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
+from argus.model_provider import get_model
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 from argus.tools.hitl import evaluate_gate, record_human_decision, request_human_approval
 from argus.tools.memo import save_memo
@@ -151,7 +152,7 @@ def check_gather_status(tool_context: ToolContext) -> dict:
 
 
 orchestrator_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="orchestrator_agent",
     description="Interprets the request and routes it to the right specialist(s) or the full pipeline.",
     instruction=(

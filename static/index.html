@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARGUS</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a21;
+    --border: #262b35;
+    --text: #e6e8eb;
+    --muted: #8b93a1;
+    --accent: #4f8cff;
+    --accent-dim: #1f2c47;
+    --user-bubble: #1f2c47;
+    --agent-bubble: #1c2028;
+    --warn-bg: #3a2a12;
+    --warn-border: #6b4a1a;
+    --error-bg: #3a1616;
+    --error-border: #6b1a1a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .key-row input[type="password"], .key-row input[type="text"] {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 220px;
+  }
+  .key-row button, .composer button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .key-row button:disabled, .composer button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .key-status {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .disclosure {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .disclosure a { color: var(--accent); }
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .bubble {
+    max-width: 720px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    line-height: 1.5;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
+  .bubble.user {
+    align-self: flex-end;
+    background: var(--user-bubble);
+  }
+  .bubble.agent {
+    align-self: flex-start;
+    background: var(--agent-bubble);
+    border: 1px solid var(--border);
+  }
+  .bubble.system {
+    align-self: center;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    border: 1px dashed var(--border);
+  }
+  .bubble.warn {
+    align-self: stretch;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .bubble.error {
+    align-self: stretch;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .bubble .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .approval-box {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+  }
+  .approval-box input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .composer {
+    border-top: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    gap: 10px;
+  }
+  .composer textarea {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    resize: none;
+    font-family: inherit;
+  }
+  .cursor {
+    display: inline-block;
+    width: 6px;
+    height: 14px;
+    background: var(--accent);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-start infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>ARGUS</h1>
+    <div class="sub">Multi-agent due-diligence system &mdash; bring your own Gemini API key</div>
+  </div>
+  <div class="key-row">
+    <input id="keyInput" type="password" placeholder="Gemini API key" autocomplete="off">
+    <button id="keySave">Save key</button>
+    <span id="keyStatus" class="key-status">No key set</span>
+  </div>
+</header>
+
+<div class="disclosure">
+  Your key is sent to this server only to call Gemini on your behalf for your own requests.
+  It is never stored, logged, or written to disk &mdash; it lives in your browser tab's
+  <code>sessionStorage</code> and clears when you close the tab.
+  Get a free key at
+  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+  This runs on Gemini's free tier (15 requests/min) &mdash; a full analysis is ~15&ndash;20 calls,
+  so you may hit a rate limit; that's your quota, not a crash.
+</div>
+
+<main id="log"></main>
+
+<div class="composer">
+  <textarea id="input" rows="2" placeholder="Ask about Acme Corp or Globex (mock companies), e.g. &quot;Give me a full due-diligence analysis of Globex.&quot;"></textarea>
+  <button id="send">Send</button>
+</div>
+
+<script>
+const APP_NAME = "argus";
+const USER_ID = "web-visitor";
+const SESSION_ID = crypto.randomUUID();
+
+const log = document.getElementById("log");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const keyInput = document.getElementById("keyInput");
+const keySave = document.getElementById("keySave");
+const keyStatus = document.getElementById("keyStatus");
+
+function getKey() { return sessionStorage.getItem("argus_api_key") || ""; }
+
+function refreshKeyStatus() {
+  const key = getKey();
+  keyStatus.textContent = key ? "Key set for this tab" : "No key set";
+  sendBtn.disabled = !key;
+}
+
+keySave.addEventListener("click", () => {
+  const v = keyInput.value.trim();
+  if (v) {
+    sessionStorage.setItem("argus_api_key", v);
+    keyInput.value = "";
+  } else {
+    sessionStorage.removeItem("argus_api_key");
+  }
+  refreshKeyStatus();
+});
+
+function addBubble(kind, text, labelText) {
+  const b = document.createElement("div");
+  b.className = "bubble " + kind;
+  if (labelText) {
+    const l = document.createElement("div");
+    l.className = "label";
+    l.textContent = labelText;
+    b.appendChild(l);
+  }
+  const t = document.createElement("span");
+  t.className = "text";
+  t.textContent = text || "";
+  b.appendChild(t);
+  log.appendChild(b);
+  log.scrollTop = log.scrollHeight;
+  return b;
+}
+
+// A single logical agent turn can arrive as many partial SSE events
+// (streaming tokens) across several different sub-agents. We keep one
+// growing bubble per turn and append into it rather than making a new
+// bubble per event, or the transcript would be unreadable.
+function currentAgentBubble() {
+  let b = log.querySelector(".bubble.agent.pending");
+  if (!b) {
+    b = addBubble("agent", "", "ARGUS");
+    b.classList.add("pending");
+  }
+  return b;
+}
+
+function finalizeAgentBubble() {
+  const b = log.querySelector(".bubble.agent.pending");
+  if (b) b.classList.remove("pending");
+}
+
+async function runTurn(newMessage, invocationId) {
+  const key = getKey();
+  const body = {
+    appName: APP_NAME,
+    userId: USER_ID,
+    sessionId: SESSION_ID,
+    newMessage,
+    streaming: true,
+  };
+  if (invocationId) body.invocationId = invocationId;
+
+  const resp = await fetch("/run_sse", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Api-Key": key,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok || !resp.body) {
+    addBubble("error", `Server error (HTTP ${resp.status}). Check your API key is valid.`, "Error");
+    return;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const chunk = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const line = chunk.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      const jsonStr = line.slice(5).trim();
+      if (!jsonStr) continue;
+
+      let evt;
+      try {
+        evt = JSON.parse(jsonStr);
+      } catch {
+        continue;
+      }
+      handleEvent(evt);
+    }
+  }
+  finalizeAgentBubble();
+}
+
+function handleEvent(evt) {
+  if (evt.error) {
+    const msg = (evt.errorDetails && evt.errorDetails.errorMessage) || evt.error || "";
+    if (/RESOURCE_EXHAUSTED|429/i.test(msg) || /RESOURCE_EXHAUSTED|429/i.test(evt.error)) {
+      addBubble(
+        "warn",
+        "Gemini's free-tier rate limit (15 requests/min) was hit partway through this " +
+        "analysis. This is your key's quota, not a bug — wait about a minute and try again.",
+        "Rate limited"
+      );
+    } else {
+      addBubble("error", msg || evt.error, "Error");
+    }
+    finalizeAgentBubble();
+    return;
+  }
+
+  // A pending human-approval call: render an inline reply box instead of
+  // streaming text, matching how the ADK Dev UI surfaces the same pause.
+  if (evt.longRunningToolIds && evt.longRunningToolIds.length && evt.content && evt.content.parts) {
+    const call = evt.content.parts
+      .map((p) => p.functionCall)
+      .find((fc) => fc && evt.longRunningToolIds.includes(fc.id));
+    if (call) {
+      renderApprovalBox(call, evt.invocationId);
+      return;
+    }
+  }
+
+  if (evt.content && evt.content.parts) {
+    for (const part of evt.content.parts) {
+      if (part.text) {
+        const bubble = currentAgentBubble();
+        bubble.querySelector(".text").textContent += part.text;
+        log.scrollTop = log.scrollHeight;
+      }
+    }
+  }
+}
+
+function renderApprovalBox(call, invocationId) {
+  finalizeAgentBubble();
+  const b = addBubble(
+    "warn",
+    "ARGUS wants to pause here and have a human review the analysis before it's released " +
+    "(low groundedness score, or a data issue it couldn't resolve on its own). " +
+    "Reply below to approve, reject, or redirect it.",
+    "Human review requested"
+  );
+  const row = document.createElement("div");
+  row.className = "approval-box";
+  const replyInput = document.createElement("input");
+  replyInput.placeholder = "e.g. \"approve\" or \"reject, the debt figure looks wrong\"";
+  const replyBtn = document.createElement("button");
+  replyBtn.textContent = "Reply";
+  row.appendChild(replyInput);
+  row.appendChild(replyBtn);
+  b.appendChild(row);
+
+  const submit = () => {
+    const text = replyInput.value.trim();
+    if (!text) return;
+    replyInput.disabled = true;
+    replyBtn.disabled = true;
+    addBubble("user", text);
+    runTurn(
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              id: call.id,
+              name: call.name,
+              response: { result: text },
+            },
+          },
+        ],
+      },
+      invocationId
+    );
+  };
+  replyBtn.addEventListener("click", submit);
+  replyInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+  });
+}
+
+function send() {
+  const text = input.value.trim();
+  if (!text || !getKey()) return;
+  addBubble("user", text);
+  input.value = "";
+  sendBtn.disabled = true;
+  runTurn({ role: "user", parts: [{ text }] }).finally(() => {
+    sendBtn.disabled = !getKey();
+  });
+}
+
+sendBtn.addEventListener("click", send);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+
+refreshKeyStatus();
+</script>
+</body>
+</html>

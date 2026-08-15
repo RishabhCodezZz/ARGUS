@@ -17,6 +17,7 @@ from google.adk.agents.readonly_context import ReadonlyContext
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS
 from argus.config import MODEL_FLASH
+from argus.model_provider import get_model
 from argus.state_keys import ANALYSIS_QUANT, ANALYSIS_RECONCILED, DRAFT_THESIS
 
 
@@ -58,7 +59,7 @@ def _synthesis_instruction(context: ReadonlyContext) -> str:
 
 
 synthesis_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="synthesis_agent",
     description="Drafts the analytical thesis from gathered evidence and computed metrics.",
     instruction=_synthesis_instruction,

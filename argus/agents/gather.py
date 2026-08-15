@@ -20,6 +20,7 @@ from google.adk.agents.parallel_agent import ParallelAgent
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
+from argus.model_provider import get_model
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 from argus.tools.mock_data import get_filings, get_market_data, get_news
 
@@ -30,7 +31,7 @@ _VERBATIM_JSON = (
 )
 
 filings_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="filings_agent",
     description="Pulls structured filings data: revenue, net income, debt by year.",
     instruction=(
@@ -45,7 +46,7 @@ filings_agent = Agent(
 )
 
 market_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="market_agent",
     description="Pulls the company's stock price time series.",
     instruction=(
@@ -60,7 +61,7 @@ market_agent = Agent(
 )
 
 sentiment_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="sentiment_agent",
     description="Pulls recent news headlines and their sentiment.",
     instruction=(

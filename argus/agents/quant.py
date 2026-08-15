@@ -19,6 +19,7 @@ from google.adk.code_executors import BuiltInCodeExecutor
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS
 from argus.config import MODEL_FLASH
+from argus.model_provider import get_model
 from argus.state_keys import ANALYSIS_QUANT, EVIDENCE_FILINGS, EVIDENCE_MARKET
 
 
@@ -53,7 +54,7 @@ def _quant_instruction(context: ReadonlyContext) -> str:
 
 
 quant_agent = Agent(
-    model=MODEL_FLASH,
+    model=get_model(MODEL_FLASH),
     name="quant_agent",
     description=(
         "Computes real financial metrics via executed Python code — the "
