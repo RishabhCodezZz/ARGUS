@@ -67,7 +67,7 @@ the system are load-bearing, and publishes the result — including the part tha
 
 | | |
 |---|---|
-| **Golden scenarios** | 8 (4 narrow · 1 RAG · 3 broad) |
+| **Golden scenarios** | 8 (3 narrow · 1 RAG · 4 broad) |
 | **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
 | **Groundedness, clean run** | **1.00** |
 | **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
