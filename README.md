@@ -262,80 +262,6 @@ on purpose. Full commands in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
 pip install -r requirements-eval.txt
 ```
 
-## Deployment: built, measured, deliberately withdrawn
-
-A containerized deployment was built and working — a FastAPI server, a bring-your-own-key web UI so
-visitors used their own Gemini quota rather than mine, and a Dockerfile carrying no credentials.
-
-It was then **removed on purpose.** One full analysis is ~15–20 model calls against a
-15-requests/minute free-tier ceiling. A public link would fail on the first serious question anyone
-asked it — and a demo that face-plants in front of a reviewer is worse than no demo. The workload
-genuinely needs a paid tier or higher rate limits; the architecture isn't the constraint, the
-economics are.
-
-Recording that as a decision rather than quietly shipping a broken link is the honest version, and
-the reasoning generalizes: *know your system's cost profile before you put it in front of users.*
-
-## What I learned
-
-**Framework abstraction boundaries drop things silently.** A memory write placed in the obvious spot
-passed every test, threw no errors, and produced a clean trace — while landing in a throwaway store
-discarded microseconds later. What fixed it wasn't better testing; it was reading the framework's
-source to learn which services cross a tool-wrapping boundary and which don't. At the next stage I
-hit a structurally identical decision and read the source *first* — one bug caught by debugging, the
-next avoided by reading.
-
-**Control flow must never depend on interpreting prose.** A total data-gathering failure still
-produces a well-formed *"Analytical Thesis… Confidence Level: Low."* To another model, that reads as
-a valid answer, not an error — so the retry silently never fired. Routing decisions now read state
-directly.
-
-**Instructions reduce failure rates; they never eliminate them.** Agents sometimes *narrate* an
-action instead of taking it — writing "PASS" without calling the exit tool, or announcing a pause
-without calling the tool that pauses. Better wording made it rarer. The hard counter is what makes
-it safe.
-
-**The measuring instrument needs testing too.** The eval harness shipped with six number-parsing
-bugs of its own — a comma splitting `$2,850` into two claims, a `$` between a minus and its digits
-flipping −57 into +57. An unvalidated harness produces confident wrong numbers *about* your
-confident wrong numbers.
-
-**Audit your own claims as a stranger would.** A cross-read of the public docs found the README
-describing a feature as working while the dev log documented it as ~50% reliable. The disclosure was
-the strength; hiding it was the liability.
-
-## Tradeoffs
-
-| Decision | Why | What it cost |
-|---|---|---|
-| Mock data, not live APIs | Keeps the effort on architecture instead of auth/pagination/schema drift | Real-world data messiness is unexercised |
-| RAG is keyword overlap, not embeddings | RAG here is *one optional subordinate tool*, not the thesis | Not real semantic search — labelled a stub, not dressed up |
-| Deterministic metrics over LLM-as-judge | An LLM scorer means the system grades its own homework | Metrics only check what can be checked mechanically |
-| 8 eval scenarios, not 20+ | One broad scenario is ~16–20 calls against a 15/min ceiling | Thinner coverage than a funded project would have |
-| Literal number matching | Loosening it reopens a fabricated-year hole (see below) | `"$2.85 billion"` vs `"2850 million"` scores as ungrounded |
-| Flash-Lite over a Pro model | Pro left the free tier; Flash's `-latest` alias caps at 20/day | Lower reasoning ceiling than the system could use |
-
-## A few interesting bugs
-
-Every one was found by running the system and reading what happened. Full list in [DEVLOG.md](DEVLOG.md).
-
-**A rounding rule let a fabricated number pass.** The matcher allowed 1% tolerance — sensible for
-money. But 1% of the year 2025 is about 20, so an injected fake *"2026"* sat comfortably within
-tolerance of a real *"2025"* and scored as grounded. Found by attacking the system with an
-adversarial prompt, not by re-reading code. Fixed with a small **fixed** tolerance.
-
-**A save that went nowhere.** Every test passed, no errors, clean trace — and every memory write
-vanished instantly into a throwaway store the framework creates per tool call. Only exposed when a
-second session's recall came back empty.
-
-**The system couldn't tell its own failure from an answer.** Described above under *What I learned* —
-the fix was to stop asking a model to interpret another model's output.
-
-**The test suite had six bugs of its own.** The first live eval run scored correct answers as wrong.
-All six were in the harness's number parsing. Fixed with regression coverage before any result was
-trusted — and production `claim_matcher.py` was deliberately left untouched, since you don't modify a
-verified production path to fix a measurement-only edge case.
-
 ## Project structure
 
 ```
@@ -353,6 +279,76 @@ eval/                      8 golden scenarios, scoring config, committed results
 tests/                     100 pytest tests
 .github/workflows/         CI (tests only, never adk eval)
 ```
+
+## Deployment: built, measured, deliberately withdrawn
+
+A containerized deployment was built and working — a FastAPI server, a bring-your-own-key web UI so
+visitors used their own Gemini quota rather than mine, and a Dockerfile carrying no credentials.
+
+It was then **removed on purpose.** One full analysis is ~15–20 model calls against a
+15-requests/minute free-tier ceiling. A public link would fail on the first serious question anyone
+asked it — and a demo that face-plants in front of a reviewer is worse than no demo. The workload
+genuinely needs a paid tier or higher rate limits; the architecture isn't the constraint, the
+economics are.
+
+Recording that as a decision rather than quietly shipping a broken link is the honest version, and
+the reasoning generalizes: *know your system's cost profile before you put it in front of users.*
+
+## Tradeoffs
+
+| Decision | Why | What it cost |
+|---|---|---|
+| Mock data, not live APIs | Keeps the effort on architecture instead of auth/pagination/schema drift | Real-world data messiness is unexercised |
+| RAG is keyword overlap, not embeddings | RAG here is *one optional subordinate tool*, not the thesis | Not real semantic search — labelled a stub, not dressed up |
+| Deterministic metrics over LLM-as-judge | An LLM scorer means the system grades its own homework | Metrics only check what can be checked mechanically |
+| 8 eval scenarios, not 20+ | One broad scenario is ~16–20 calls against a 15/min ceiling | Thinner coverage than a funded project would have |
+| Literal number matching | Loosening it reopens a fabricated-year hole (see below) | `"$2.85 billion"` vs `"2850 million"` scores as ungrounded |
+| Flash-Lite over a Pro model | Pro left the free tier; Flash's `-latest` alias caps at 20/day | Lower reasoning ceiling than the system could use |
+
+## Bugs, and what each one taught me
+
+Every one below was found by running the system and reading what actually happened, not by reading
+the code more carefully. Full build-by-build list in [DEVLOG.md](DEVLOG.md).
+
+**A save that went nowhere.** A memory-write step sat in the obvious place, passed every test, threw
+no errors, and produced a clean trace — while landing in a throwaway store the framework creates
+fresh per tool call, discarded microseconds later. Only exposed because a second session's recall
+came back empty despite a flawless first run. The fix wasn't better testing; it was reading the
+framework's source to learn which services actually cross a tool-wrapping boundary and which don't.
+*The lesson stuck:* at the next stage I hit a structurally identical decision (where to put the
+human-approval gate) and read the source **first** — one bug caught by debugging, the next avoided
+by reading.
+
+**The system couldn't tell its own failure from a real answer.** A total data-gathering failure
+still produced a well-formed *"Analytical Thesis… Confidence Level: Low"* — which reads as a valid
+answer to another model, not an error, so the retry logic silently never fired. Fixed by making
+routing decisions read `session.state` directly instead of asking a model to interpret another
+model's prose. *Generalizes to:* control flow must never depend on interpreting text.
+
+**A rounding rule let a fabricated number pass.** The matcher allowed 1% tolerance — sensible for
+money. But 1% of the year 2025 is about 20, so an injected fake *"2026"* sat comfortably within
+tolerance of a real *"2025"* and scored as grounded. Found by attacking the system with an
+adversarial prompt, not by re-reading code. Fixed with a small **fixed** tolerance instead of a
+percentage.
+
+**Explaining an action isn't the same as taking it.** Agents sometimes *narrate* a step instead of
+performing it — writing "PASS" without calling the exit tool, or announcing a human-review pause
+without calling the tool that actually pauses the run. Clearer instructions made it rarer, but never
+eliminated it. *Generalizes to:* the hard counter (`max_iterations`, a retry budget) is the real
+safety net; instructions are just the optimization.
+
+**The measuring instrument needed testing too.** The first live eval run scored correct answers as
+wrong — all six bugs were in the harness's own number parsing: a comma splitting `$2,850` into two
+claims, a `$` sitting between a minus sign and its digits flipping a real −$57M loss into +57. Fixed
+with regression coverage before trusting any result, and production `claim_matcher.py` was
+deliberately left untouched — you don't modify a verified production path to fix a measurement-only
+edge case. An unvalidated harness produces confident wrong numbers *about* your confident wrong
+numbers.
+
+**The repo contradicted itself in public.** A cross-read of the docs against each other found the
+README describing a feature as reliably working while the dev log, in the same repo, documented it
+as ~50% reliable. The disclosure was the strength; hiding it was the liability — same principle as
+the section below.
 
 ## Status & known gaps
 
