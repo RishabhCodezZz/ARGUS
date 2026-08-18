@@ -21,6 +21,15 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Raw screen recordings (demo.gif in the repo root is the actual README asset --
+# GitHub only renders GIFs inline in README.md, never MP4/MKV, so a raw video
+# committed here would just be dead weight: no inline playback, permanent repo
+# bloat, and it'd trip GitHub's 100MB hard push limit on longer recordings.
+*.mp4
+*.mkv
+*.mov
+*.webm
+
 # Local-only planning docs (not needed by others viewing the repo)
 .claude/
 ARGUS_ADK_Requirements.md

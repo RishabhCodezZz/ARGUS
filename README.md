@@ -8,113 +8,238 @@
 ![Free to run](https://img.shields.io/badge/cost-%240%20(free%20tier)-success)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-ARGUS is a team of AI agents that researches a company for you — instead of one AI trying to do everything itself.
+> **A multi-agent research system that refuses to state a number it can't trace back to a source.**
 
-You ask a question. It figures out how much work that needs, gathers data, does all the math with real code (not AI guessing), checks its own draft for mistakes, verifies every number against its sources, and — if it isn't confident — pauses and asks a person before answering.
+Ask it about a company. It decides how much work the question needs, gathers data from three sources
+in parallel, computes every financial metric with **real executed Python** (never model-estimated),
+cross-checks marketing spin against filed numbers, red-teams its own draft with a second agent,
+fact-checks every figure against the source data, and — if the result scores below a measured
+confidence bar — **pauses and asks a human** instead of answering anyway.
 
-It's built on Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK) and runs entirely on the free Gemini API. No cloud bill, no credit card, no paid services.
+Built on Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK). Runs entirely
+on the free Gemini API tier: no cloud bill, no credit card.
+
+![ARGUS answering a narrow question live in the ADK Dev UI — the request routes to a single specialist agent, which calls a real tool and returns a grounded answer](demo.gif)
+
+*A narrow question routed to one specialist agent, in the live Dev UI — full run, no cuts. A broad
+"due diligence" request triggers the entire pipeline below instead; see
+["See it catch something"](#see-it-catch-something) for what that looks like.*
 
 ---
 
-## Table of contents
+## Why this matters
 
-- [Why it's built this way](#why-its-built-this-way)
-- [What it can do](#what-it-can-do)
-- [How it works](#how-it-works)
-- [Tech stack](#tech-stack)
-- [Getting started](#getting-started)
-- [Running the tests](#running-the-tests)
-- [Evaluation and the ablation experiment](#evaluation-and-the-ablation-experiment)
-- [Project structure](#project-structure)
-- [A few interesting bugs](#a-few-interesting-bugs)
-- [What's built](#whats-built)
+Language models answer confidently whether or not they have the data. That failure is invisible —
+a fabricated figure looks exactly like a real one. In due diligence, an unsourced number isn't a
+small error; it's the entire risk.
 
-## Why it's built this way
+ARGUS treats "is this number actually true?" as an engineering problem rather than a prompting
+problem:
 
-Most agent projects show a demo and stop there. This one also tries to answer a harder question: **which parts of the system actually matter, and by how much?**
+| Problem | What ARGUS does about it |
+|---|---|
+| **Models invent arithmetic** | All math runs as real pandas/numpy code. Other agents may only *narrate* computed values — never calculate. |
+| **Models repeat the framing they're given** | A deterministic agent cross-checks each headline's sentiment against that year's actual filed net income. |
+| **You can't tell a good answer from a lucky one** | Every number in the final answer is matched against source data, producing an auditable groundedness score. |
+| **Confidently wrong output ships anyway** | Below a measured threshold, the run genuinely suspends for human approve / reject / redirect. |
+| **"It works" is unfalsifiable** | 8 golden scenarios, 5 deterministic scoring checks, and an ablation study measuring what each component actually contributes. |
 
-There's a test suite that scores every answer with plain code — not by asking another AI if the answer "looks right." And there's an experiment that removes pieces of the system (the self-checking loop, the code-execution step) one at a time, to see what actually breaks when they're gone. The results are in [Evaluation and the ablation experiment](#evaluation-and-the-ablation-experiment).
+**The one-line version:** most agent projects demo a happy path. This one measures which parts of
+the system are load-bearing, and publishes the result — including the part that surprised me.
 
-Every real bug found while building this — and how it was found — is written up in [A few interesting bugs](#a-few-interesting-bugs), with the full list in [DEVLOG.md](DEVLOG.md). The reasoning behind specific design choices (why mock data, why some agents make zero LLM calls, why a few things depart from the more obvious design) is in [DECISIONS.md](DECISIONS.md).
+## Key differentiators
 
-## What it can do
+- **Multi-agent orchestration with cost-aware routing** — a router picks between one specialist
+  (~2–3 model calls) and the full pipeline (~15–20), instead of running everything for every question.
+- **Deterministic financial computation** — Gemini's code executor runs genuine pandas; the model
+  never produces a figure it didn't compute.
+- **A grounding & verification pipeline** — an adversarial critic loop plus a mechanical claim-matcher
+  that scores every stated number and flags (rather than deletes) anything unverified.
+- **Two agents that make zero LLM calls, on purpose** — contradiction detection and the release gate
+  are pure Python, because a check shouldn't grade its own kind of work.
+- **Guardrails enforced in framework callbacks**, not prompt instructions — blocked requests are
+  intercepted before the model sees them.
+- **An evaluation harness with deterministic metrics** — never LLM-as-judge — plus a **resumable**
+  live ablation runner that checkpoints through rate limits.
+- **Ablation analysis with committed raw evidence**, so the headline result is checkable, not claimed.
 
-- **Picks the right amount of work.** A quick question ("what's the price?") gets a quick answer from one agent. A full research request runs the entire pipeline below. The system decides, not the user.
-- **Never lets the AI do math.** Growth rates, margins, and other financial figures are computed by real Python code, not estimated by the model.
-- **Checks its own work.** One agent drafts an answer. Another agent tries to find holes in it. This repeats (with a hard limit) until the draft holds up.
-- **Fact-checks every number.** Each number in the final answer is checked against the real source data by a simple matching tool, not by asking another AI whether it seems right.
-- **Catches contradictions.** If a news headline says one thing but the real financial filing says another for that same year, it gets flagged.
-- **Asks a human when unsure.** A low-confidence answer doesn't just get sent anyway. The run pauses and waits for a person to approve, reject, or redirect it.
-- **Remembers past answers.** Ask about the same company again later, even in a new chat, and it starts from what it already found.
-- **Has safety guardrails.** Blocks investment-advice requests, strips risky language from its own output, and limits how many tool calls one request can make.
+## Results at a glance
+
+| | |
+|---|---|
+| **Golden scenarios** | 8 (4 narrow · 1 RAG · 3 broad) |
+| **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
+| **Groundedness, clean run** | **1.00** |
+| **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
+| **Unit tests** | 100, pure Python, no API key, runs in seconds |
+| **Cost to reproduce** | $0 |
+
+### Evaluation baseline
+
+Run live against the real API. Status is reported as measured, including the one case that fails:
+
+| Scenario | Result |
+|---|---|
+| `narrow_market_price` · `narrow_filings` · `narrow_sentiment` | ✅ Pass all applicable metrics |
+| `rag_competitive_position` | ✅ Pass |
+| `broad_clean_acme` | ✅ Pass all four correctness metrics |
+| `broad_contradiction_globex` | ✅ Pass — contradiction correctly flagged |
+| `broad_adversarial_injection` | ✅ Correctly **refuses** an injected fake 2026 revenue figure |
+| `broad_missing_company_retry` | ⚠️ **Unreliable** — retries correctly in some runs, gives up in others |
+
+### Ablation study — what each component is actually worth
+
+Three pipeline variants, six live runs, same two scenarios. Raw output committed in
+[`eval/results/`](eval/results/ablation_2026-08-02.md).
+
+| Variant | Acme (clean) | Globex (hard) | Derived insight produced |
+|---|---|---|---|
+| **Full system** | 1.00 | 1.00 | CAGR, YoY growth, margins, volatility |
+| **No critic/refiner loop** | 1.00 | 0.9655 | Same four (1 claim flagged unverified) |
+| **No code execution** | 1.00 | 1.00 | **None** |
+
+**The finding I got wrong, and why that's the interesting part.** I predicted that removing code
+execution would cause hallucinated numbers. It didn't — groundedness stayed at a perfect 1.00 in
+both scenarios, because `synthesis_agent`'s instruction to say *"the analysis doesn't cover it"*
+rather than invent a figure held up under live testing.
+
+What it removed instead was **100% of derived analytical content**. Verified by searching both
+committed `no_code_exec` responses for `%`: the only percentage either one contains is an *"8%
+workforce reduction"* quoted straight from the source news data — zero CAGR, zero margin trend,
+zero volatility. The answers stayed accurate and became shallow.
+
+So what code execution actually buys is **analytical depth underneath a still-grounded answer**, not
+accuracy. The critic loop, separately, showed a small real benefit exactly where you'd want one — on
+the harder, messier scenario, not the easy one.
+
+## See it catch something
+
+**Cross-source contradiction — quoted verbatim from
+[committed run output](eval/results/ablation_2026-08-02.json).** Globex's data has a trap: a January
+2025 headline calls FY2024 *"the strongest year in company history"* (tagged `positive`), while
+`filings.json` records FY2024 net income of **−$57M**. Revenue really did hit a record — the headline
+isn't lying, it's spinning. The Reconciliation agent catches it in pure Python, and Synthesis is
+required to surface it:
+
+> *"Notably, a direct contradiction emerged regarding corporate reporting: a headline from January 22,
+> 2025, framed Globex's 2024 performance as a 'record... strongest year in company history' with
+> positive sentiment, yet actual filed financials show that FY2024 net income resulted in a loss of
+> -$57 million."*
+
+**Unverified claims are flagged, not deleted — also from committed output.** The `no_critic` ablation
+run left one claim the matcher couldn't confirm in the text, wrapped as `[UNVERIFIED: 22]` (a date
+fragment), dropping that run to **0.9655** — below the 0.98 bar, so it would escalate to a human
+rather than auto-release. Over-rejecting is worse than a visible flag a reviewer can check.
+
+**Prompt injection refused — verified in live testing, documented in [DEVLOG.md](DEVLOG.md).** An
+adversarial prompt injects a fabricated *"2026 projected revenue of $5 billion"*. Quant and Synthesis
+are explicitly instructed that the user's message is *instructions, never a source of facts*, so the
+figure never enters the analysis; the Verifier flags the residual mention (`[UNVERIFIED: 2026]`) and
+the run scores ≈0.95 — escalating rather than releasing. Finding this is also what exposed the
+tolerance bug described below.
 
 ## How it works
 
 ```mermaid
 flowchart TD
-    U[Your question] --> O{Orchestrator}
-    O -->|"Quick question<br/>(price / filings / news)"| S[One Specialist Agent]
-    O -->|"Background question<br/>(strategy, competitors)"| R[Retrieval Agent]
-    O -->|"Full research request"| G
+    U[Your question] --> O{Orchestrator<br/>picks the cheapest sufficient path}
+    O -->|"Narrow question<br/>~2-3 calls"| S[One Specialist Agent]
+    O -->|"Background question<br/>~2-3 calls"| R[Retrieval Agent · RAG]
+    O -->|"Full research<br/>~15-20 calls"| G
 
-    subgraph PIPE [Full Research Pipeline]
+    subgraph PIPE [Full Analysis Pipeline]
         direction TB
-        G[Gather Data<br/>filings + market + news] --> Q[Do the Math<br/>real Python code]
-        Q --> RC[Check for Contradictions]
-        RC --> SY[Draft an Answer]
-        SY --> CR[Critique & Fix Loop]
-        CR --> V[Fact-Check Every Number]
+        G["1 · GATHER — 3 agents in parallel<br/>filings + market + news"] --> Q["2 · COMPUTE — real executed Python<br/>CAGR, margins, volatility"]
+        Q --> RC["3 · RECONCILE — zero LLM calls<br/>spin vs. filed numbers"]
+        RC --> SY["4 · DRAFT — may only narrate<br/>already-computed values"]
+        SY --> CR["5 · RED-TEAM LOOP — critic and refiner<br/>hard cap: 4 iterations"]
+        CR --> V["6 · VERIFY — deterministic matcher<br/>produces groundedness score"]
     end
 
-    V --> H{Confident enough?}
-    H -->|Yes| M[Save answer + memory]
-    H -->|No| HU[Ask a human] --> M
+    V --> H{"Gate: score >= 0.98<br/>AND critic passed?"}
+    H -->|Yes| M[Release verbatim<br/>+ save memo and memory]
+    H -->|No| HU["PAUSE — wait for human<br/>approve / reject / redirect"]
+    HU --> M
 ```
 
-If the company you ask about isn't found, it's designed to retry once with the closest match and disclose that it did, instead of quietly swapping it in. Live testing found this retry doesn't always trigger — see [What's built](#whats-built) for the honest status.
+Agents never pass strings to each other — they read and write typed keys on `session.state`, declared
+once in [`argus/state_keys.py`](argus/state_keys.py) so parallel agents provably can't collide.
 
-## Tech stack
+## Technical depth
 
-| | |
-|---|---|
-| **Framework** | [Google ADK](https://google.github.io/adk-docs/) 2.5.0 (Python) |
-| **Model** | Gemini 3.5 Flash-Lite (free tier) |
-| **Math** | Real pandas / numpy code, executed — not AI-estimated |
-| **Testing** | pytest, 100 tests, no API calls needed |
-| **CI** | GitHub Actions, runs the tests on every push |
-| **Data** | Mock financial data for two made-up companies |
+<details>
+<summary><b>Architecture</b> — 11 agents, 13 tools, 3 composition primitives</summary>
+
+- `ParallelAgent` fans out three independent gather specialists concurrently.
+- `LoopAgent` runs the critic ⇄ refiner cycle with a hard `max_iterations` cap.
+- `SequentialAgent` composes the six-phase pipeline in strict dependency order.
+- `AgentTool` wraps *any* agent — including the entire pipeline — as one callable tool, which is what
+  let a routing layer be added on top of a working system as a purely **additive** change.
+- Two agents are deliberately not LLMs: `ReconciliationAgent` is a custom `BaseAgent` with a pure
+  Python body, and the release gate is plain arithmetic.
+
+</details>
+
+<details>
+<summary><b>Verification</b> — how a number earns the right to appear</summary>
+
+1. Computed by executed pandas in `quant_agent` — never generated.
+2. Narrated downstream only if it already exists in the computed metrics.
+3. Attacked by `critic_agent`, which re-reads the *raw evidence*, not just the draft.
+4. Matched against source data by `compute_grounding` — a pure function with a small **fixed**
+   tolerance (see the bug below for why fixed, not percentage).
+5. Scored, and gated against a threshold by code, not by the model's own judgment.
+
+</details>
+
+<details>
+<summary><b>Reliability engineering</b> — every loop has a counter, not a promise</summary>
+
+- Review loop: `exit_loop` tool for the fast path, `max_iterations=4` as the actual guarantee.
+- Retry: a deterministic `meta.replan_count` budget of 1, not the model's willingness to stop.
+- Tool budget: 20 calls per session, enforced in a `before_tool_callback`.
+- The gate **fails closed** — a missing score, a low score, or a non-clean critique all escalate.
+- The ablation runner checkpoints to disk, so a rate-limit hit mid-run resumes instead of restarting.
+
+</details>
+
+<details>
+<summary><b>Guardrails</b> — enforced in callbacks, not requested in prompts</summary>
+
+- `before_model_callback` blocks trade-advice requests before the model is ever invoked.
+- `after_model_callback` strips unhedged action language from any agent's output.
+- `before_tool_callback` enforces the per-session tool budget.
+- `after_tool_callback` logs provenance and neutralizes instruction-like text found *inside* tool
+  results — the enforcement point a real scraped-filings API would flow through.
+
+</details>
 
 ## Getting started
 
+Three steps to a running system:
+
 ```bash
-# 1. Create a virtual environment
-python -m venv .venv
+# 1 — install
+python -m venv .venv && pip install -r requirements.txt
+#     activate:  .venv\Scripts\activate  (Windows)  |  source .venv/bin/activate  (macOS/Linux)
 
-# 2. Activate it
-#    Windows (cmd):        .venv\Scripts\activate
-#    Windows (PowerShell): .venv\Scripts\Activate.ps1
-#    macOS / Linux:         source .venv/bin/activate
+# 2 — add a free key from https://aistudio.google.com  ->  "Get API key"
+#     create argus/.env  (or copy argus/.env.example):
+#       GOOGLE_GENAI_USE_VERTEXAI=FALSE
+#       GOOGLE_API_KEY=your-key-here
 
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Get a free API key: https://aistudio.google.com -> "Get API key"
-# 5. Create argus/.env (or copy argus/.env.example and fill it in):
-#      GOOGLE_GENAI_USE_VERTEXAI=FALSE
-#      GOOGLE_API_KEY=your-key-here
-
-# 6. Run it
+# 3 — run
 python -m google.adk.cli web --port 8000
 ```
 
-The commands below assume the virtual environment from step 2 is activated — once it is, `python`
-and `pip` resolve to the venv's own copies on every OS, so no platform-specific paths are needed
-anywhere past this point.
-
 Open `http://localhost:8000`, pick the `argus` app, and try:
 
-- *"What's Acme Corp's recent stock price trend?"* — a quick, one-agent answer
-- *"Give me a full due-diligence analysis of Globex."* — the full pipeline (Globex has a hidden contradiction built into the test data — watch it get caught and called out)
+- *"What's Acme Corp's recent stock price trend?"* — routes to **one** agent; watch the others stay idle
+- *"Give me a full due-diligence analysis of Globex."* — the full pipeline; watch the planted
+  contradiction get caught and called out
+
+> **Heads up on the free tier:** a full analysis is ~15–20 model calls against a 15-requests/minute
+> ceiling, so back-to-back broad runs can hit a rate limit. That's quota, not a crash — wait a minute.
 
 ## Running the tests
 
@@ -122,58 +247,127 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 python -m pytest tests/ -v
 ```
 
-100 tests, pure Python, no API calls, runs in a few seconds. Every tool has its logic tested directly; the AI-facing parts are verified by running the app live.
+100 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
+the model-facing behavior is verified by live runs documented in [DEVLOG.md](DEVLOG.md).
 
-## Evaluation and the ablation experiment
+CI runs this suite on every push. It deliberately **never** runs `adk eval` — that needs a real API
+key and would burn free-tier quota on every commit.
 
-There's a set of 8 test scenarios and 5 scoring checks (4 custom deterministic metrics plus one built-in text-similarity check) — none of them another AI grading the answer.
+## Reproducing the evaluation
 
-The more interesting part is what happens when pieces of the system are removed. Three versions were run side by side on the same two test cases (an easy one and a hard one with a real contradiction in it):
+Both commands need the eval-only extras (pandas/nltk/rouge-score), kept out of the base requirements
+on purpose. Full commands in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
 
-| Version | Score (easy case) | Score (hard case) | Extra insight given |
-|---|---|---|---|
-| **Full system** | 1.0 | 1.0 | growth rate, margins, volatility |
-| **No self-checking loop** | 1.0 | 0.97 | same, sometimes more detail |
-| **No code execution** | 1.0 | 1.0 | **none** |
+```bash
+pip install -r requirements-eval.txt
+```
 
-**What this shows:** removing the code-execution step did *not* make the AI make numbers up. It was told to say "I don't have that number" instead of guessing, and it did every time. But it also stopped giving any calculated insight at all — no growth rate, no margin trend, nothing. The safety instruction worked; what code execution actually adds isn't accuracy, it's *depth*.
+## Deployment: built, measured, deliberately withdrawn
 
-This table is a summary. The full run — raw scores, every generated answer in full, and exactly how each column was derived — is committed in [`eval/results/ablation_2026-08-02.md`](eval/results/ablation_2026-08-02.md), alongside the raw JSON output. Commands to reproduce both the evaluation and the ablation experiment are in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
+A containerized deployment was built and working — a FastAPI server, a bring-your-own-key web UI so
+visitors used their own Gemini quota rather than mine, and a Dockerfile carrying no credentials.
+
+It was then **removed on purpose.** One full analysis is ~15–20 model calls against a
+15-requests/minute free-tier ceiling. A public link would fail on the first serious question anyone
+asked it — and a demo that face-plants in front of a reviewer is worse than no demo. The workload
+genuinely needs a paid tier or higher rate limits; the architecture isn't the constraint, the
+economics are.
+
+Recording that as a decision rather than quietly shipping a broken link is the honest version, and
+the reasoning generalizes: *know your system's cost profile before you put it in front of users.*
+
+## What I learned
+
+**Framework abstraction boundaries drop things silently.** A memory write placed in the obvious spot
+passed every test, threw no errors, and produced a clean trace — while landing in a throwaway store
+discarded microseconds later. What fixed it wasn't better testing; it was reading the framework's
+source to learn which services cross a tool-wrapping boundary and which don't. At the next stage I
+hit a structurally identical decision and read the source *first* — one bug caught by debugging, the
+next avoided by reading.
+
+**Control flow must never depend on interpreting prose.** A total data-gathering failure still
+produces a well-formed *"Analytical Thesis… Confidence Level: Low."* To another model, that reads as
+a valid answer, not an error — so the retry silently never fired. Routing decisions now read state
+directly.
+
+**Instructions reduce failure rates; they never eliminate them.** Agents sometimes *narrate* an
+action instead of taking it — writing "PASS" without calling the exit tool, or announcing a pause
+without calling the tool that pauses. Better wording made it rarer. The hard counter is what makes
+it safe.
+
+**The measuring instrument needs testing too.** The eval harness shipped with six number-parsing
+bugs of its own — a comma splitting `$2,850` into two claims, a `$` between a minus and its digits
+flipping −57 into +57. An unvalidated harness produces confident wrong numbers *about* your
+confident wrong numbers.
+
+**Audit your own claims as a stranger would.** A cross-read of the public docs found the README
+describing a feature as working while the dev log documented it as ~50% reliable. The disclosure was
+the strength; hiding it was the liability.
+
+## Tradeoffs
+
+| Decision | Why | What it cost |
+|---|---|---|
+| Mock data, not live APIs | Keeps the effort on architecture instead of auth/pagination/schema drift | Real-world data messiness is unexercised |
+| RAG is keyword overlap, not embeddings | RAG here is *one optional subordinate tool*, not the thesis | Not real semantic search — labelled a stub, not dressed up |
+| Deterministic metrics over LLM-as-judge | An LLM scorer means the system grades its own homework | Metrics only check what can be checked mechanically |
+| 8 eval scenarios, not 20+ | One broad scenario is ~16–20 calls against a 15/min ceiling | Thinner coverage than a funded project would have |
+| Literal number matching | Loosening it reopens a fabricated-year hole (see below) | `"$2.85 billion"` vs `"2850 million"` scores as ungrounded |
+| Flash-Lite over a Pro model | Pro left the free tier; Flash's `-latest` alias caps at 20/day | Lower reasoning ceiling than the system could use |
+
+## A few interesting bugs
+
+Every one was found by running the system and reading what happened. Full list in [DEVLOG.md](DEVLOG.md).
+
+**A rounding rule let a fabricated number pass.** The matcher allowed 1% tolerance — sensible for
+money. But 1% of the year 2025 is about 20, so an injected fake *"2026"* sat comfortably within
+tolerance of a real *"2025"* and scored as grounded. Found by attacking the system with an
+adversarial prompt, not by re-reading code. Fixed with a small **fixed** tolerance.
+
+**A save that went nowhere.** Every test passed, no errors, clean trace — and every memory write
+vanished instantly into a throwaway store the framework creates per tool call. Only exposed when a
+second session's recall came back empty.
+
+**The system couldn't tell its own failure from an answer.** Described above under *What I learned* —
+the fix was to stop asking a model to interpret another model's output.
+
+**The test suite had six bugs of its own.** The first live eval run scored correct answers as wrong.
+All six were in the harness's number parsing. Fixed with regression coverage before any result was
+trusted — and production `claim_matcher.py` was deliberately left untouched, since you don't modify a
+verified production path to fix a measurement-only edge case.
 
 ## Project structure
 
 ```
 argus/
-  agent.py              entry point (root_agent)
-  config.py               model settings, thresholds
-  state_keys.py            shared state key names
+  agent.py                 entry point (root_agent -> orchestrator)
+  config.py                model IDs, thresholds
+  state_keys.py            shared state namespace
   agents/                  orchestrator, gather, quant, reconciliation, synthesis,
                              critic, refiner, verifier, retrieval, pipeline
-  tools/                   fact-checker, memory, human-approval, memo writer
-  callbacks/               safety guardrails
-  eval/                    test scoring code + the ablation experiment
-data/                      mock company data used for testing
-eval/                      the 8 test scenarios
+  tools/                   claim matcher, reconciler, memory, HITL gate, memo writer
+  callbacks/               the 4 always-on guardrails
+  eval/                    deterministic metrics + the ablation runner
+data/                      mock company data (Acme Corp, Globex)
+eval/                      8 golden scenarios, scoring config, committed results
 tests/                     100 pytest tests
-.github/workflows/         CI setup (runs the tests on every push)
+.github/workflows/         CI (tests only, never adk eval)
 ```
 
-## A few interesting bugs
+## Status & known gaps
 
-Every one of these was found by actually running the system and reading what happened, not by reading the docs more carefully. The full list, with every stage of the build, is in [DEVLOG.md](DEVLOG.md).
+Everything described above is built and verified live: the routing layer, the full pipeline, the
+self-critique loop, grounding verification, guardrails, memory, the human-approval gate, memo
+artifacts, and the complete evaluation and ablation harness.
 
-**A rounding rule let a fake number slip through.** The fact-checker allowed a small rounding error — 1% of the real value. That sounds reasonable, until you realize 1% of the year "2025" is about 20. So a made-up "2026" was close enough to pass as real. Fixed by using a small *fixed* allowance instead of a percentage.
+**Stated plainly, because a disclosed gap beats a hidden one:**
 
-**The system couldn't tell its own failures apart from real answers.** When data-gathering failed completely, the AI still wrote a normal-looking report — just a vague one. To another AI reading it, that looked like a finished answer, not an error. Fixed by checking the actual data directly instead of asking the AI to judge its own output.
+- **Retry-with-closest-match is ~50% reliable.** Across live runs it sometimes retries correctly and
+  sometimes gives up claiming no alternative exists. Real, documented, unfixed.
+- **The `redirect` path of the human gate is implemented but not live-verified** — approve and reject
+  both were, end to end.
+- **Groundedness matching is literal**, so a unit-converted restatement scores as ungrounded. Left
+  strict on purpose.
 
-**A save was silently going nowhere.** A memory-save step was placed in what looked like the right spot. Every test passed, and no errors ever showed up. It still didn't work — that part of the code runs in a temporary, throwaway copy of memory every single time, so the save vanished instantly. Only found because a second test came back with no memory of the first one.
-
-**The test suite had bugs of its own.** The first real test run said everything passed. Looking closer, one fully correct answer scored as barely accurate. It turned out the *scoring code* had six small bugs of its own — like a comma in "$2,850" being read as two separate numbers instead of one. All six were fixed and re-tested before trusting any of the results.
-
-## What's built
-
-The core research pipeline, the self-checking loop, fact-checking and safety guardrails, smart routing with retries and background search, memory, human approval, saved reports, and the full evaluation and ablation harness described above.
-
-**One known gap, stated plainly:** the retry-with-closest-match behavior is implemented and works in most runs, but live testing found it isn't fully reliable — across repeated tests it sometimes retries correctly and sometimes gives up without retrying. This is a real, disclosed limitation, not a solved feature. Full detail in [DEVLOG.md](DEVLOG.md).
-
-See [DEVLOG.md](DEVLOG.md) for the complete build history.
+See [DEVLOG.md](DEVLOG.md) for the full build history and [DECISIONS.md](DECISIONS.md) for design
+rationale.
