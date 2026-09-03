@@ -1,11 +1,16 @@
-"""Long-term memory — distilled per-entity findings persisted via
-ADK's MemoryService, so a later run on the same entity "starts warm". A
-genuinely different store from session.state: state.* is short-term,
-per-run working memory that a session's own agents read/write via
-state_delta/output_key; memory persists ACROSS sessions and is written/read
-through Context.add_events_to_memory / Context.search_memory instead —
-there is no state_keys.py entry for it because it never touches
-session.state at all.
+"""Runtime memory — distilled per-entity findings persisted via ADK's
+MemoryService, so a later run on the same entity "starts warm". A
+genuinely different store from session.state: state.* is per-run working
+memory that a session's own agents read/write via state_delta/output_key;
+this store persists ACROSS sessions but only for the life of the running
+process. It is ADK's InMemoryMemoryService — an in-process store that is
+CLEARED ON RESTART, not a durable database. A cross-restart store would
+need a custom SQLite-backed MemoryService (deliberately deferred — the
+only non-in-memory implementations ADK ships are Vertex-AI-backed, which
+conflicts with this project's fully-local decision; see DECISIONS.md).
+It is written/read through Context.add_events_to_memory /
+Context.search_memory, and there is no state_keys.py entry for it because
+it never touches session.state at all.
 
 Writes ONE distilled sentence per run (entity + groundedness + thesis
 headline), not the whole noisy multi-agent trace via
@@ -70,7 +75,7 @@ def extract_entity_name(filings: dict) -> str | None:
 
 
 def build_distilled_memory(entity: str, thesis: str, groundedness: float | None) -> str:
-    """Formats the one distilled sentence persisted to long-term memory per run.
+    """Formats the one distilled sentence persisted to runtime memory per run.
 
     Just the headline (first line) of the thesis, not the full memo — this
     is meant to be skimmed by a future recall, not re-read in full.
@@ -81,8 +86,9 @@ def build_distilled_memory(entity: str, thesis: str, groundedness: float | None)
 
 
 async def recall_prior_findings(entity: str, tool_context: ToolContext) -> dict:
-    """Check ARGUS's long-term memory for a prior finding about this company
-    from an earlier session, before running a fresh analysis.
+    """Check ARGUS's runtime memory for a prior finding about this company
+    from an earlier session in the same running process, before running a
+    fresh analysis.
 
     This is NOT financial data and never overrides what the current run's
     own freshly-gathered evidence says — it only lets the answer note
@@ -110,7 +116,7 @@ async def remember_finding(tool_context: ToolContext) -> dict:
     """Call this once, right after a broad analysis has completed
     successfully (check_gather_status returned gather_ok=true) — distills
     the just-finished run into one sentence and saves it to ARGUS's
-    long-term memory, so a future request about the same company starts
+    runtime memory, so a future request about the same company starts
     warm. Reads the result straight from this session's own state; takes
     no arguments.
 

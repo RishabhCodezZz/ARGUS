@@ -51,12 +51,13 @@ structured data tool answers. Genuinely optional: the Orchestrator only
 reaches for it when asked, never as part of narrow or broad routing.
 
 Stage 5 Part A adds two memory tools (argus/tools/memory.py) to the
-broad-request branch: recall_prior_findings (a long-term MemoryService
-lookup, separate from session.state, so a second run on the same entity
-can "start warm") and remember_finding (persists this run's
-result once it succeeds). Recalled text is presentation-only context
-("ARGUS has looked at this before") — never treated as evidence for THIS
-run; the pipeline's own fresh, verified result is still the actual answer.
+broad-request branch: recall_prior_findings (a runtime MemoryService
+lookup, separate from session.state and cleared on process restart, so a
+second run on the same entity in the same process can "start warm") and
+remember_finding (persists this run's result once it succeeds). Recalled
+text is presentation-only context ("ARGUS has looked at this before") —
+never treated as evidence for THIS run; the pipeline's own fresh,
+verified result is still the actual answer.
 
 remember_finding is called explicitly by the Orchestrator, not wired as a
 callback on full_analysis_pipeline itself — confirmed live that a

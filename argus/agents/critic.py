@@ -46,8 +46,9 @@ def _critic_instruction(context: ReadonlyContext) -> str:
     sentiment = context.state.get(EVIDENCE_SENTIMENT, "(no sentiment data)")
     return (
         "You are the ARGUS Red-Team Critic. Your job is to attack the "
-        "draft thesis below, not to be agreeable. Check every claim in it "
-        "against the evidence and computed metrics provided:\n"
+        "draft thesis below, not to be agreeable. Test the draft's claims "
+        "against the evidence and computed metrics provided — numbers and "
+        "qualitative assertions alike:\n"
         "- Does every number in the draft actually appear in 'Computed "
         "metrics' or the raw evidence? Flag any that don't.\n"
         "- Are there unsupported leaps — conclusions that don't follow "

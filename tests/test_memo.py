@@ -54,7 +54,7 @@ def test_human_approved_decision_with_reason_is_rendered():
 
 def test_contradiction_count_surfaces():
     memo = build_memo("Globex", "t", 1.0, {"decision": "auto_approved"}, 2, _WHEN)
-    assert "2" in memo
+    assert "Narrative-profitability tensions found | 2" in memo
 
 
 def test_missing_thesis_degrades_gracefully():

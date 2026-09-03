@@ -415,8 +415,22 @@ artifacts, and the complete evaluation and ablation harness.
   Real, documented, not fully resolved by the name-matching fix.
 - **The `redirect` path of the human gate is implemented but not live-verified** — approve and reject
   both were, end to end.
-- **Groundedness matching is literal**, so a unit-converted restatement scores as ungrounded. Left
-  strict on purpose.
+- **Groundedness matching is value-only, not context-aware.** The verifier checks that each numeric
+  literal in the draft *appears somewhere* in the evidence — it does not bind that number to a
+  metric, unit, or year. Two consequences: a unit-converted restatement (`"$2.85 billion"` for a
+  filed `"$2,850 million"`) scores as *ungrounded* (left strict on purpose — loosening it reopens the
+  fabricated-year hole described in "Bugs"); and, conversely, a number can score as *grounded* purely
+  because an unrelated figure of the same value exists elsewhere in the evidence (a claimed `$500M`
+  debt "matching" an unrelated `$500M` credit line). This is distinct from the ISO-date-fragment bug,
+  which is fixed. Structured metric/unit/year matching would close it; deferred rather than rushed,
+  for the same reason as the retry and memory gaps above. Treat the groundedness score as a strong
+  check on *numeric fabrication*, not as proof every figure is used in its correct context.
+- **The cross-run memory is a *runtime* store, not a durable one.** It uses ADK's
+  `InMemoryMemoryService`: a later run on a company it has already seen starts warm, but only within
+  the same running process — the store is cleared on restart. A cross-restart version would need a
+  custom SQLite-backed `MemoryService`; deferred on purpose (the non-in-memory implementations ADK
+  ships are Vertex-AI-backed, which the fully-local decision rules out). See
+  [DECISIONS.md](DECISIONS.md).
 
 See [DEVLOG.md](DEVLOG.md) for the full build history and [DECISIONS.md](DECISIONS.md) for design
 rationale.

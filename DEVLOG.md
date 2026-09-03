@@ -102,11 +102,13 @@ Every stage of this project, what was built, and how it was verified live. See t
 
   **Stage 4 is now fully complete** — Reconciliation, dynamic Orchestrator, bounded re-planning, and
   RAG-as-tool, all built and verified live, one part at a time.
-- **Stage 5, Part A (2026-07-25)** — Long-term memory. `recall_prior_findings` and `remember_finding`
-  (`argus/tools/memory.py`) are both tools the Orchestrator calls itself: before a broad analysis, check
-  whether ARGUS has a prior distilled finding for this company; after a successful run, save one. This
-  is a genuinely different store from `session.state` — it persists across sessions, not just across
-  turns in one chat.
+- **Stage 5, Part A (2026-07-25)** — Runtime memory (called "long-term memory" at the time; renamed
+  2026-09-03 — it's an in-process store cleared on restart, see that entry below).
+  `recall_prior_findings` and `remember_finding` (`argus/tools/memory.py`) are both tools the
+  Orchestrator calls itself: before a broad analysis, check whether ARGUS has a prior distilled finding
+  for this company; after a successful run, save one. This is a genuinely different store from
+  `session.state` — it persists across sessions, not just across turns in one chat (though only for the
+  life of the running process).
 
   The first design put the save step in an `after_agent_callback` on `full_analysis_pipeline` instead —
   it looked like the natural place ("the run just finished, persist it"), passed every test, and ran
@@ -154,8 +156,8 @@ Every stage of this project, what was built, and how it was verified live. See t
 
   This closes out a running finding across the whole stage: `AgentTool`'s inner runner now has a
   complete, checked four-row picture — session state and artifacts cross the boundary back to the
-  parent; long-term memory, the long-running-pause signal, and (confirmed this part) the streaming
-  mode do not. That last one explains, precisely, why streaming works for the Orchestrator's own turns
+  parent; the runtime memory service, the long-running-pause signal, and (confirmed this part) the
+  streaming mode do not. That last one explains, precisely, why streaming works for the Orchestrator's own turns
   and not for anything happening inside the wrapped pipeline.
 
   Verified live: two independent auto-approved runs each correctly saved a memo artifact; fetching it
@@ -210,7 +212,7 @@ Every stage of this project, what was built, and how it was verified live. See t
   run through a real `Runner`, not a simulation. Full results table in the main README.
 - **Portfolio-readiness pass (2026-08-12)** — a full external-reviewer audit of the repo (as it would
   look to someone who only ever sees the 48 tracked files, never this log) surfaced real problems that
-  the project's own "verify all claims" discipline had missed on itself:
+  the project's own claim-checking discipline had missed on itself:
 
   The most serious: `README.md` stated the bounded-retry feature as reliably working, while this very
   log already documented it as ~50% reliable across live testing — a genuine contradiction between two
@@ -326,6 +328,35 @@ Every stage of this project, what was built, and how it was verified live. See t
   project's own locked-in "fully local" decision — a real durable option means writing a new
   SQLite-backed service from scratch, a separate task. Re-running the eval/ablation harness on the
   current commit remains deferred by explicit choice, given the real API cost.
+
+- **Naming fix (2026-09-03)** — the cross-run memory feature was renamed from "long-term memory" to
+  **"runtime memory"** everywhere in the code and docs, following the same external review. It uses
+  ADK's `InMemoryMemoryService`: a second run on an already-seen entity starts warm, but only within
+  the same running process — the store is cleared on restart. "Long-term" overclaimed that; "session
+  memory" (the other name the review offered) is also wrong, because the feature's whole purpose is to
+  persist *across* ADK sessions — what it doesn't survive is a process restart. Docstring/comment
+  change only, no behavior change: `argus/tools/memory.py` module + tool docstrings,
+  `orchestrator.py` and `pipeline.py` comments, plus a new "known gap" bullet in the README and the
+  standing-decision paragraph in DECISIONS.md. The durable SQLite-backed `MemoryService` stays the
+  real deferred item; this is the honest interim name for what's actually there.
+
+- **Wording / disclosure pass (2026-09-03)** — three small accuracy fixes closing out the external
+  review before the portfolio draft:
+  - The pipeline's own tool description said it "verifies every claim is grounded" — but the
+    deterministic verifier only checks numeric literals. Changed to "reviews its claims and verifies
+    every numeric claim against the evidence" in `pipeline.py`; the parallel "check every claim"
+    phrasing in `critic.py`'s instruction and the "verify all claims" shorthand in this log were
+    softened to match what each step actually does (the critic is an LLM red-team, so it *reviews*
+    every claim; only the numeric check is mechanical).
+  - The memo artifact's displayed row `Cross-source contradictions found` is now
+    `Narrative-profitability tensions found`, matching `synthesis_agent`'s own "tension between the
+    narrative framing and the real profitability" wording. Display label only — the `contradictions`
+    state key and `find_contradictions` function keep their names.
+  - The value-only nature of groundedness matching is now a stated known limitation in the README
+    (and DECISIONS.md): a number can score as grounded merely because an unrelated figure of the
+    same value exists elsewhere in the evidence. Distinct from the ISO-date-fragment bug (fixed);
+    closing it needs structured metric/unit/year matching, deferred rather than rushed. The score is
+    now framed as a strong check on numeric *fabrication*, not proof of correct-context use.
 
   113 tests total (up from 100), `ruff check` clean, `pyright` clean — both added to CI in this pass,
   not just run locally.

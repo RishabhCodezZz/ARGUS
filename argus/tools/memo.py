@@ -89,7 +89,7 @@ def build_memo(
         f"| Generated | {generated_at.strftime('%Y-%m-%d %H:%M UTC')} |\n"
         f"| Groundedness score | {score} |\n"
         f"| Release decision | {approval_line} |\n"
-        f"| Cross-source contradictions found | {contradictions_count} |\n\n"
+        f"| Narrative-profitability tensions found | {contradictions_count} |\n\n"
         f"---\n\n"
         f"{thesis_body}\n\n"
         f"---\n\n"

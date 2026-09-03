@@ -87,22 +87,44 @@ Two rounds of review from a second reviewer given the code cold surfaced several
 undetected bugs — including the sharpest one in the project's history: a date's day component in
 un-normalized source text could validate a fabricated claim. Every finding was reproduced against the
 real code before being acted on, and reproduced again after the fix, the same standard this project
-already holds its own agents to. Not every recommendation was taken as given, either: a suggestion to
-rename the "contradiction" field, or to fully solve deterministic retry execution in the same pass,
-was scoped down to what could be verified safely rather than rushed — the review is a second set of
-eyes, not a replacement for verifying its claims the same way every other claim in this project gets
-verified.
+already holds its own agents to. Not every recommendation was taken as-is at full scope, either: the
+"contradiction" wording was changed only where a user actually sees it (`synthesis_agent`'s output
+defaults to "narrative-vs-profitability tension"; the memo's displayed row is "Narrative-profitability
+tensions found"), while the internal `contradictions` state key and `find_contradictions` function
+keep their names — a display fix, not a codebase-wide rename. Deterministic retry execution and
+context-aware grounding were disclosed as known limitations rather than solved in the same pass. The
+review is a second set of eyes, not a replacement for verifying its claims the same way every other
+claim in this project gets verified.
 
-## Durable memory and deterministic retry execution, deliberately deferred
+## Durable memory, deterministic retry, and context-aware grounding — deferred, disclosed
 
-Both were raised by external review as real gaps, and both are staying open on purpose rather than
-being patched hastily. Durable (cross-restart) long-term memory would need a custom SQLite-backed
+Three gaps raised by external review are staying open on purpose rather than being patched hastily.
+Each is stated as a known limitation in the README so the system is never presented as stronger than
+it is.
+
+The cross-run memory feature was **renamed** rather than made durable: it is called "runtime memory"
+throughout the code and docs now, not "long-term memory". It uses ADK's `InMemoryMemoryService` — a
+later run on an already-seen entity starts warm, but only within the same running process; the store
+is cleared on restart. "Long-term" overclaimed that; "session memory" (the other name external review
+offered) is also wrong, since the whole point is that it persists *across* ADK sessions — what it does
+not survive is a process restart. Durable (cross-restart) memory would need a custom SQLite-backed
 `MemoryService` — confirmed against ADK's own source that the only two non-in-memory implementations
 it ships are both Vertex-AI-backed, which conflicts with this project's own "fully local, no cloud"
-decision above. Deterministic retry execution — not just picking the retry name deterministically,
+decision above. That is the real deferred item; the rename is the honest interim state.
+
+Deterministic retry execution — not just picking the retry name deterministically,
 which is already fixed, but actually *performing* the bounded retry in code instead of trusting the
 model to decide to call the pipeline again — needs a real controller driving that specific flow, not
-a modified tool. Both are real architecture additions, not patches, and this project's own repeated
+a modified tool.
+
+Context-aware groundedness matching — the verifier confirms a draft's numeric literal *appears* in
+the evidence, but does not bind it to a metric, unit, or year. So a number can pass merely because an
+unrelated figure of the same value exists somewhere in the evidence (distinct from the ISO-date-fragment
+bug, which is fixed). Closing it means structured metric/unit/year matching — a real change to
+`compute_grounding`'s core, not a tolerance tweak. Until then the score is presented as a strong check
+on numeric *fabrication*, not as proof every figure is used in its right context.
+
+All three are real architecture additions, not patches, and this project's own repeated
 lesson (rushed fixes to state/memory-boundary issues have twice produced a *new*, harder-to-spot bug)
 is reason enough to scope them as separate work rather than force them into the same pass as smaller,
 independently-verifiable fixes.
