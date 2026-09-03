@@ -181,25 +181,76 @@ def numeric_fidelity_ratio(claimed_numbers: set[float], correct_numbers: set[flo
     return matched / len(claimed_numbers)
 
 
-_NEGATED_CONTRADICTION_RE = re.compile(
-    r"\b(no|zero|without)\b[\w\s-]{0,30}\bcontradictions?\b", re.IGNORECASE
+_NEGATED_DISCLOSURE_RE = re.compile(
+    r"\b(no|zero|not any|without|absence of|there (?:is|are|was|were) no)\b"
+    r"[\w\s,'’-]{0,40}?\b(contradictions?|tensions?|mismatch(?:es)?|"
+    r"discrepanc(?:y|ies)|inconsistenc(?:y|ies)|disconnects?)\b",
+    re.IGNORECASE,
 )
+
+# synthesis.py now instructs the agent to describe a reconciliation
+# finding as a "tension between the narrative framing and the real
+# profitability" and to RESERVE the word "contradiction" for the stronger
+# "the company stated something false" case. So a correct disclosure often
+# never contains the literal "contradiction" — it says "stark tension
+# between Globex's narrative framing and its reported profitability", or
+# "this headline tone does not match actual reported profitability". This
+# recognises that phrasing: a tension/mismatch term within ~160 chars of a
+# narrative-framing term, either order. A generic "competitive tension in
+# core markets" has no narrative-side term nearby and does not match.
+_TENSION_TERM = (
+    r"(?:tension|contradict\w*|mismatch|discrepanc\w+|inconsistenc\w+|at odds|"
+    r"does\s*n['’]?t\s+match|does\s+not\s+match|do\s+not\s+match|did\s+not\s+match|"
+    r"fails?\s+to\s+match|diverge\w*|disconnect)"
+)
+_NARRATIVE_TERM = (
+    r"(?:narrative|headline|framing|messaging|marketing|optimistic|rosy|upbeat|"
+    r"(?:corporate|management)\s+tone|positive\s+(?:tone|framing|spin|sentiment))"
+)
+_TENSION_DISCLOSURE_RE = re.compile(
+    rf"{_TENSION_TERM}[\s\S]{{0,160}}{_NARRATIVE_TERM}"
+    rf"|{_NARRATIVE_TERM}[\s\S]{{0,160}}{_TENSION_TERM}",
+    re.IGNORECASE,
+)
+
+_NO_ANALYSIS_RE = re.compile(
+    r"could\s*n['’]?t\s+find|could\s+not\s+find|unable\s+to\s+(?:find|retrieve|locate|produce|analy[sz]e)|"
+    r"no\s+(?:mock\s+)?data\s+(?:is\s+)?(?:was\s+)?(?:available|found)|not\s+in\s+the\s+dataset",
+    re.IGNORECASE,
+)
+_HAS_THESIS_RE = re.compile(r"confidence\s+level|analytical\s+thesis|overall\s+take", re.IGNORECASE)
+
+
+def declined_without_analysis(response_text: str) -> bool:
+    """True when the run reported it could not analyze the requested entity
+    and produced NO thesis of its own — a graceful decline. It has no
+    contradiction-disclosure obligation, so contradiction_correctness must
+    skip it (not score it against a company name it merely listed as
+    available). A bounded retry that substitutes another company and DOES
+    deliver an analysis ("...here's an analysis of Globex instead: <thesis>")
+    still carries the thesis markers, so it is not treated as a decline —
+    it gets scored normally against the substituted company.
+    """
+    return bool(_NO_ANALYSIS_RE.search(response_text)) and not _HAS_THESIS_RE.search(response_text)
 
 
 def contradiction_flagged_correctly(response_text: str, expected_contradiction_count: int) -> bool:
     """Checks whether the response's contradiction-disclosure behavior
-    matches ground truth: if contradictions were planted, the response
-    must AFFIRMATIVELY flag one; if none were planted, it must not.
+    matches ground truth: if a reconciliation finding was planted, the
+    response must AFFIRMATIVELY disclose it (as a "contradiction" OR, per
+    synthesis.py's current instruction, as a narrative-vs-profitability
+    "tension"); if none was planted, it must not.
 
-    A naive substring check on "contradiction" is wrong here: synthesis
-    agent's own instruction produces phrasing like "There are no reported
-    contradictions..." for the clean case, which contains the word
-    "contradiction" while correctly reporting there isn't one. Caught by
-    this module's own pytest coverage before it ever shipped.
+    A naive substring check on "contradiction" is wrong both ways: the
+    clean case produces "There are no reported contradictions...", which
+    contains the word while correctly reporting none — and the flagged
+    case now usually says "tension" and never says "contradiction" at all.
+    Both are covered by this module's own pytest.
     """
-    mentions_word = "contradiction" in response_text.lower()
-    negated = bool(_NEGATED_CONTRADICTION_RE.search(response_text))
-    affirmatively_flagged = mentions_word and not negated
+    mentions_contradiction_word = "contradiction" in response_text.lower()
+    describes_tension = bool(_TENSION_DISCLOSURE_RE.search(response_text))
+    negated = bool(_NEGATED_DISCLOSURE_RE.search(response_text))
+    affirmatively_flagged = (mentions_contradiction_word or describes_tension) and not negated
     if expected_contradiction_count > 0:
         return affirmatively_flagged
     return not affirmatively_flagged
@@ -402,7 +453,17 @@ def contradiction_correctness(
     """Checks the response's contradiction-disclosure behavior against
     find_contradictions' ground truth for whichever company the scenario
     concerns — not whether the agent's own reconciliation agent said so,
-    but whether the final text actually reflects reality."""
+    but whether the final text actually reflects reality.
+
+    Skipped (NOT_EVALUATED) for an invocation that gracefully declined to
+    analyze the requested entity: a "couldn't find data for Initech — Acme
+    Corp and Globex are available" response has no disclosure obligation,
+    and scoring it against a company it merely LISTED (detect_company would
+    latch onto "Globex" and expect its planted contradiction to have been
+    flagged) is a false failure. A bounded retry that substitutes a
+    company and delivers a real thesis is NOT a decline and is still
+    scored, against the substituted company.
+    """
     del expected_invocations, conversation_scenario
     per_invocation_results = []
     scores = []
@@ -411,6 +472,8 @@ def contradiction_correctness(
         if not has_reconciliation_tool(tool_names):
             continue
         text = _response_text(actual)
+        if declined_without_analysis(text):
+            continue
         company = detect_company(_query_text(actual)) or detect_company(text)
         if company is None:
             continue

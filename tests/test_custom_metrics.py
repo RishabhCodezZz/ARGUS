@@ -19,6 +19,7 @@ from argus.tools.claim_matcher import normalize_for_extraction as _normalize_for
 from argus.eval.custom_metrics import (
     _status_for,
     contradiction_flagged_correctly,
+    declined_without_analysis,
     detect_company,
     has_quant_relevant_tool,
     has_reconciliation_tool,
@@ -161,6 +162,66 @@ def test_contradiction_flagged_correctly_recognizes_hyphenated_negation():
     assert contradiction_flagged_correctly(
         "No headline-to-filing contradictions were identified in the reported data.", 0
     ) is True
+
+
+# synthesis.py now says "tension" and reserves "contradiction" for the
+# stronger case -- a correct disclosure often never contains the literal
+# word. Found live: broad_missing_company_retry produced a full, correct
+# Globex analysis ("stark tension between Globex's narrative framing and
+# its reported profitability") and scored contradiction_correctness 0.0
+# purely because it said "tension", not "contradiction".
+
+
+def test_contradiction_flagged_correctly_recognizes_tension_phrasing():
+    assert contradiction_flagged_correctly(
+        "There is a stark tension between Globex's narrative framing and its reported profitability.", 1
+    )
+
+
+def test_contradiction_flagged_correctly_recognizes_does_not_match_phrasing():
+    assert contradiction_flagged_correctly(
+        "This optimistic headline tone does not match the actual reported profitability.", 1
+    )
+
+
+def test_contradiction_flagged_correctly_recognizes_section_heading_form():
+    assert contradiction_flagged_correctly(
+        "#### Recent Catalysts and Narrative Tension\nThere is a stark tension here.", 1
+    )
+
+
+def test_contradiction_flagged_correctly_ignores_generic_unrelated_tension():
+    # "tension" with no narrative-framing term nearby is not a disclosure
+    assert contradiction_flagged_correctly(
+        "Acme faces competitive tension in its core end markets, but margins held.", 0
+    ) is True
+
+
+def test_contradiction_flagged_correctly_recognizes_negated_tension():
+    assert contradiction_flagged_correctly(
+        "There is no tension between the headline framing and the filed results.", 0
+    ) is True
+
+
+def test_declined_without_analysis_true_for_pure_decline():
+    assert declined_without_analysis(
+        "I couldn't find data for Initech. The companies that are actually available: Acme Corp, Globex."
+    )
+
+
+def test_declined_without_analysis_false_for_substitution_with_thesis():
+    # a retry that DID deliver an analysis is not a decline
+    text = (
+        "I couldn't find data for Initech, so here's an analysis of Globex instead:\n"
+        "### Analytical Thesis: Globex\n...Overall Take: Bearish\nConfidence Level: High"
+    )
+    assert not declined_without_analysis(text)
+
+
+def test_declined_without_analysis_false_for_normal_analysis():
+    assert not declined_without_analysis(
+        "### Analytical Thesis: Acme Corp\nSteady growth.\nConfidence Level: High"
+    )
 
 
 def test_strip_dates_removes_iso_dates():

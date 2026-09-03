@@ -464,15 +464,37 @@ Every stage of this project, what was built, and how it was verified live. See t
   `recompute_quant_metrics` + raw mock data), while number-parsing is now byte-identical to the system
   under test, permanently, with no second copy to drift. Offline re-score of the saved
   `evalset_result.json` with the fix: `narrow_sentiment` 0.5 → 1.0, `broad_clean_acme` 0.8929 →
-  0.9259 — both clear the 0.9 bar, taking the evalset from 5/8 to a projected 7/8. The remaining
-  failure, `broad_missing_company_retry`, is the scenario CLAUDE.md already documents as genuinely
-  unreliable — it fails on `response_match_score` (0.12, phrasing) and `contradiction_correctness`
-  (0.0, a *metric*-scoping bug: a "couldn't find data — Acme Corp and Globex are available" decline
-  response makes `detect_company` resolve to Globex, whose planted contradiction the metric then
-  expects the decline to have flagged). Left for a separate pass. 132 tests still green;
-  `test_custom_metrics.py` now imports the three normalization sub-steps straight from
+  0.9259 — both clear the 0.9 bar, taking the evalset from 5/8 to a projected 7/8. 132 tests still
+  green; `test_custom_metrics.py` now imports the three normalization sub-steps straight from
   `claim_matcher`. A confirming live re-run of the evalset is deferred (real quota cost; the offline
   re-score is deterministic — same function, same saved responses).
+
+- **`contradiction_correctness` vs. the "tension" wording (2026-09-03)** — the third eval failure,
+  `broad_missing_company_retry` `contradiction_correctness` = 0.0, turned out **not** to be a decline
+  as first assumed. The saved response shows the bounded retry *worked*: "I couldn't find data for
+  Initech, so here's an analysis of Globex instead:" followed by a full, correct Globex thesis that
+  disclosed the finding as *"a stark tension between Globex's narrative framing and its reported
+  profitability"*. `contradiction_flagged_correctly` only recognised the literal word
+  "contradiction" — but `synthesis.py` was changed earlier this same day (the tension-wording
+  commit) to prefer "tension" and reserve "contradiction" for the stronger "stated something false"
+  case. So the metric was checking for a word the system under test had just been told to stop using.
+  Fixed: `contradiction_flagged_correctly` now also treats a tension/mismatch term within ~160 chars
+  of a narrative-framing term (either order) as an affirmative disclosure — "does not match ...
+  reported profitability", "Narrative Tension" heading, etc. — while a generic "competitive tension
+  in core markets" (no narrative-side term nearby) still does not count, and the negation guard was
+  broadened from contradiction-only to tension/mismatch/discrepancy too. Separately added
+  `declined_without_analysis` and wired it into the `contradiction_correctness` adapter: a response
+  that says it couldn't find data and produces **no thesis of its own** is skipped (NOT_EVALUATED)
+  rather than scored against a company it merely listed as available — the fix originally asked for,
+  still valid for the pure give-up path even though this particular run wasn't one. Offline re-score
+  of the saved run: `broad_missing_company_retry` `contradiction_correctness` 0.0 → 1.0, every other
+  scenario unchanged (`broad_contradiction_globex` still 1.0 — it happened to say both words). That
+  leaves `broad_missing_company_retry`'s only remaining miss as `response_match_score` 0.12 vs the
+  0.25 bar — the soft ROUGE metric against a golden `expected_response` written before this scenario
+  produced a stable substituted-thesis output; recalibrating that golden is a separate call given the
+  retry path's documented run-to-run variance. Net projected evalset: **7/8**, with the last one a
+  single soft-metric miss on a known-variable scenario. 140 tests total (up from 132), `ruff` /
+  `pyright` clean.
 
 ## Reproducing the results
 
