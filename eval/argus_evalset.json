@@ -150,7 +150,7 @@
           },
           "final_response": {
             "role": "model",
-            "parts": [{"text": "I couldn't find data for Initech, so here's a full due-diligence analysis of the closest available match instead. Analytical Thesis. Confidence Level. This is analysis, not investment advice."}]
+            "parts": [{"text": "I couldn't find data for Initech, so here's a full due-diligence analysis of Globex, the closest available match, instead. Analytical Thesis: Globex. Financial Trend: revenue grew from $2,200.0 million in 2021 to $2,940.7 million in 2025, a CAGR of 7.52%, but profitability deteriorated into net losses, with net income margins of -2.00% in 2024 and -4.02% in 2025 and total debt up $650.0 million. Valuation and Price Behavior: the stock fell from $42.00 to $22.90 across 2025, with monthly price volatility of 7.37%. Recent Catalysts and Narrative Tension: a stark tension exists between Globex's narrative framing and its reported profitability, as a January 2025 headline touting record 2024 revenue and the strongest year in company history does not match a filed FY2024 net loss of $57.0 million; further negative catalysts include layoffs affecting 8% of the workforce, a CFO resignation, and a new $500 million credit facility for restructuring. Overall Take: Bearish. Confidence Level: High. This is analysis, not investment advice."}]
           },
           "intermediate_data": {
             "tool_uses": [
