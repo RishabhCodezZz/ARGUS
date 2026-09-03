@@ -69,6 +69,44 @@ routing that the rest of the project already applies to arithmetic.
 Each of these is "built it differently than the more literal design, here's why" rather than a gap
 nobody noticed.
 
+## Multiple Gemini models, split by call frequency, not uniformly
+
+Every agent ran on one pinned model through Stage 6. Free-tier quota is tracked per model, not
+shared, so an agent that fires many times per run (the Orchestrator; the critic/refiner loop) needs
+a large-quota pool, while an agent that fires exactly once per run (quant, synthesis, verifier,
+retrieval) can safely get its own smaller, dedicated pool without starving anyone else's budget. The
+split that shipped protects the two most load-bearing agents (Orchestrator, quant) on the one model
+proven reliable across the whole project, rather than spreading everything evenly — after three
+different models each passed an isolated single-call test and then failed on their first real
+pipeline call, "confirmed valid" and "confirmed reliable under load" stopped being treated as the
+same claim.
+
+## An external code review is verified, not trusted or dismissed
+
+Two rounds of review from a second reviewer given the code cold surfaced several real, previously
+undetected bugs — including the sharpest one in the project's history: a date's day component in
+un-normalized source text could validate a fabricated claim. Every finding was reproduced against the
+real code before being acted on, and reproduced again after the fix, the same standard this project
+already holds its own agents to. Not every recommendation was taken as given, either: a suggestion to
+rename the "contradiction" field, or to fully solve deterministic retry execution in the same pass,
+was scoped down to what could be verified safely rather than rushed — the review is a second set of
+eyes, not a replacement for verifying its claims the same way every other claim in this project gets
+verified.
+
+## Durable memory and deterministic retry execution, deliberately deferred
+
+Both were raised by external review as real gaps, and both are staying open on purpose rather than
+being patched hastily. Durable (cross-restart) long-term memory would need a custom SQLite-backed
+`MemoryService` — confirmed against ADK's own source that the only two non-in-memory implementations
+it ships are both Vertex-AI-backed, which conflicts with this project's own "fully local, no cloud"
+decision above. Deterministic retry execution — not just picking the retry name deterministically,
+which is already fixed, but actually *performing* the bounded retry in code instead of trusting the
+model to decide to call the pipeline again — needs a real controller driving that specific flow, not
+a modified tool. Both are real architecture additions, not patches, and this project's own repeated
+lesson (rushed fixes to state/memory-boundary issues have twice produced a *new*, harder-to-spot bug)
+is reason enough to scope them as separate work rather than force them into the same pass as smaller,
+independently-verifiable fixes.
+
 ## Why Google ADK
 
 It's the framework this project set out to learn, and it makes a few structural guarantees explicit

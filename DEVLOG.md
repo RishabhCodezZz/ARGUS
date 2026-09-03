@@ -248,6 +248,88 @@ Every stage of this project, what was built, and how it was verified live. See t
   logic testable with a minimal stand-in `ToolContext` and no live ADK runtime. 100 tests total,
   zero regressions, all found and fixed before any of it went out the door rather than after.
 
+- **Multi-model routing, and two external-reviewer passes (2026-09-03)** — every agent had run on a
+  single pinned model (`gemini-3.5-flash-lite`) since Stage 1. Free-tier quota is tracked per model,
+  not shared, so splitting agents across several models raises the effective ceiling for one full
+  pipeline run instead of exhausting one 15-req/min bucket. Landing the final lineup took three real,
+  live failures first, each one instructive in its own way:
+
+  `gemini-3.8-flash` (quant_agent's first assignment) returned a genuine `503 UNAVAILABLE` ("high
+  demand") on its very first real pipeline call — after passing an isolated single-call smoke test
+  cleanly. `gemini-3.7-flash` (critic_agent, next attempt) did the same. `gemini-3.6-flash`
+  (verifier_agent, third attempt) did too. All three were confirmed real, valid model IDs; none of
+  them were confirmed *reliable* by a one-off "say OK" test — the actual lesson, not obvious going
+  in: an isolated test proves an ID exists, not that it holds up under real load, and that gap bit
+  the same way three separate times before it was treated as a pattern instead of a fluke. Separately,
+  hit-and-trial testing confirmed `gemini-3.0-flash`, `gemini-3-flash`, and the exact spelling
+  `gemini-2.5-flash-lite` are all `404 NOT_FOUND` — real dead IDs, not just unreliable ones, caught
+  with a direct `google.genai.Client` call before ever being wired into an agent again. Final,
+  live-verified lineup: `gemini-3.5-flash-lite` for `orchestrator_agent`, `quant_agent`, and the 3
+  gatherers (the highest-frequency / most load-bearing agents stay on the one model with zero real
+  failures across the whole project); `gemini-3.1-flash-lite` shared by `critic_agent`, `refiner_agent`,
+  and `verifier_agent` (the high-frequency loop needs the large 500-req/day pool, and verifier only
+  adds one call/run so it barely dents it); `gemini-3.5-flash` for `synthesis_agent`; `gemini-2.5-flash`
+  for `retrieval_agent` (lowest priority, rarely invoked, the safest place to run a freshly-validated
+  model).
+
+  A separate, purely mechanical bug ate an entire round of "why didn't my fix work" debugging: editing
+  the agent files does not affect an `adk web` process that's already running — Python doesn't
+  re-import already-loaded modules mid-process, so every test after an edit was silently still running
+  the *previous* model assignment until the server was explicitly restarted. And `meta.tool_call_count`
+  (the guardrail budget from Stage 3) is cumulative for the whole Dev UI session, not per-message — a
+  long day of testing in one continuously-reused session hit the 20-call cap mid-run, which looked like
+  a new bug but was the existing guardrail working exactly as designed.
+
+  **First external-review pass.** A second reviewer given the code cold, findings verified against the
+  real code before being trusted and reproduced again after each fix (not taken on the review's word
+  either way): the Groundedness Verifier let the calling LLM enumerate which numbers to check, so an
+  empty or under-enumerated list scored a vacuous, perfect `1.0` — fixed by having `check_grounding`
+  read `draft.thesis` and extract its own numbers deterministically, removing the model's discretion
+  over what gets checked at all. `save_memo` and `remember_finding` only refused to run after a
+  rejection because their own docstrings said so — reproduced live: both ran anyway when called right
+  after a real `meta.human.decision == "reject"`. Both now fail closed in code unless the decision is
+  exactly `"approve"` or `"auto_approved"`. `check_gather_status` read completely missing
+  `evidence.*` state (e.g. the model never actually calling `full_analysis_pipeline`) as
+  `gather_ok: True`, since an empty `{}` has no `"error"` key — now checked explicitly.
+  The Orchestrator's one bounded retry picked its "closest match" company name via the model's own
+  judgment, with nothing guaranteeing it matched a real string-distance comparison — `check_gather_status`
+  now computes `suggested_retry_name` itself via `difflib` before the model ever sees the choice.
+  `recompute_quant_metrics`'s CAGR used row count as the elapsed-years denominator, silently correct
+  only because the mock data has no year gaps. Ruff and Pyright were added to CI in the same pass (a
+  new, zero-API-cost lint job) and found three more real issues on the first run: a missing
+  venv-relative re-export in `argus/__init__.py`, an under-typed recursive function in the
+  injection-screening guardrail (`_flag_injection`, now given proper `@overload`s), and an
+  un-null-checked `Session` lookup in the ablation script.
+
+  **Second external-review pass**, the same day, found the sharpest bug of the whole project so far:
+  the Verifier fix above normalized the *draft's* text before extracting its claims, but
+  `compute_grounding` still extracted "known" numbers from raw, un-normalized *source* text. An
+  un-normalized ISO date's day component is itself a valid-looking small number — reproduced exactly
+  as reported: a fabricated `"-$1M loss"` claim (normalizes to `-1.0`) matched the `"-01"` inside an
+  unrelated source date (`"2025-01-01"`) and scored a false, perfect `1.0`. Fixed inside
+  `compute_grounding` itself, which also silently closed the identical gap in the eval harness's own
+  `independent_groundedness` metric — same function, same bug, one fix, re-verified afterward against
+  real Globex evidence to confirm no real number stopped grounding correctly. Regression tests were
+  added for the memo/memory rejection gates from the first pass — confirmed live at the time, but
+  genuinely untested until now, using `asyncio.run()` directly rather than adding a `pytest-asyncio`
+  dependency for 7 tests. `meta.groundedness` is now documented explicitly as *numeric* groundedness —
+  a prose-only fabricated claim with no numbers in it scores a vacuous `1.0` by design, a real scope
+  limit worth stating rather than leaving implicit. `synthesis_agent`'s instruction now defaults to
+  describing a reconciliation finding as a tension between narrative framing and real profitability,
+  reserving "contradiction" for when the evidence actually supports that stronger word.
+
+  Explicitly not done, and why, rather than silently deferred: deterministic retry *execution* (not
+  just name selection) needs a real code-driven controller in place of a model-decided tool call — a
+  genuine architecture change, scoped separately rather than rushed. Durable local memory was
+  investigated, not built: confirmed against ADK's own source that the only two non-in-memory
+  `MemoryService` implementations it ships are both Vertex-AI-backed, which conflicts with this
+  project's own locked-in "fully local" decision — a real durable option means writing a new
+  SQLite-backed service from scratch, a separate task. Re-running the eval/ablation harness on the
+  current commit remains deferred by explicit choice, given the real API cost.
+
+  113 tests total (up from 100), `ruff check` clean, `pyright` clean — both added to CI in this pass,
+  not just run locally.
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base
