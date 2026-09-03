@@ -25,6 +25,10 @@ def _load(name: str, filename: str) -> dict:
         return {
             "error": f"No mock data for '{name}'.",
             "available_companies": _available_companies(),
+            # Lets check_gather_status (argus/agents/orchestrator.py) compute
+            # a retry candidate deterministically via string matching,
+            # instead of leaving the model to eyeball "closest match" itself.
+            "requested_name": name.strip(),
         }
     path = _DATA_DIR / slug / filename
     with path.open("r", encoding="utf-8") as f:

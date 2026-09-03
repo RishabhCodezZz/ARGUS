@@ -1,0 +1,6 @@
+# Extra dependencies for linting/type-checking only -- CI installs this,
+# the app and the pytest suite don't need it. Same reasoning as
+# requirements-eval.txt: keep the base install small.
+-r requirements.txt
+ruff==0.14.4
+pyright==1.1.407

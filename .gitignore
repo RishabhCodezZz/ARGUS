@@ -36,3 +36,7 @@ ARGUS_ADK_Requirements.md
 PLAN.md
 CLAUDE.md
 INTERVIEW.md
+# AGENTS.md is CLAUDE.md's Codex-equivalent -- same local-planning-doc
+# treatment. Was untracked-but-not-ignored (flagged by an external code
+# review): a real inconsistency with the policy this whole block states.
+AGENTS.md

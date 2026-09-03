@@ -12,8 +12,13 @@ same dynamic-routing requirement. Revisit if trace legibility becomes a real nee
 Also implements bounded re-planning: if gathering reports missing
 evidence (no data for the exact name given), the Orchestrator may retry
 ONCE with a corrected/refined entity name before giving up. "Refined
-subtask" concretely means: pick the closest match from the failed tool's
-own `available_companies` list and retry with that.
+subtask" concretely means: check_gather_status computes the closest match
+from the failed tool's own `available_companies` list itself, via
+difflib, and hands it back as `suggested_retry_name` -- this used to be
+a judgment call left to the Orchestrator's own reading of the list (an
+external code review flagged this correctly: nothing guaranteed the
+model picked the same match a deterministic comparison would), now it
+isn't.
 
 check_gather_status is a DETERMINISTIC check, not a judgment call left to
 the orchestrator's own reading of prose — first attempt at this let the
@@ -90,6 +95,7 @@ for the same reason: a memo saved before the HITL Gate decides would
 persist a rejected analysis to disk before a human ever saw it.
 """
 
+import difflib
 import json
 
 from google.adk.agents.llm_agent import Agent
@@ -128,25 +134,43 @@ def check_gather_status(tool_context: ToolContext) -> dict:
     Returns:
         dict with "gather_ok" (True if filings/market/sentiment all came
         back without an error). If gather_ok is False: "may_retry"
-        (whether the re-plan budget still allows one more attempt) and
-        "available_companies" (the companies that DO exist — pick the
-        closest match to what the user asked for if you retry).
+        (whether the re-plan budget still allows one more attempt),
+        "available_companies" (the companies that DO exist), and
+        "suggested_retry_name" (the closest match to what was actually
+        requested, already computed for you — use it directly, don't
+        pick your own match).
     """
     sources = [
         _parse_state_json(tool_context.state.get(EVIDENCE_FILINGS)),
         _parse_state_json(tool_context.state.get(EVIDENCE_MARKET)),
         _parse_state_json(tool_context.state.get(EVIDENCE_SENTIMENT)),
     ]
-    errors = [s for s in sources if "error" in s]
+    # `not s` catches a MISSING evidence key (e.g. the model never actually
+    # called full_analysis_pipeline, or state genuinely came back empty) --
+    # _parse_state_json(None) returns {}, which has no "error" key, so an
+    # empty/missing source previously looked identical to a real success.
+    # Found by an external code review: gather_ok came back True even when
+    # every evidence.* slot was empty.
+    errors = [s for s in sources if not s or "error" in s]
     if not errors:
         return {"gather_ok": True}
 
     count = tool_context.state.get(_REPLAN_STATE_KEY, 0) + 1
     tool_context.state[_REPLAN_STATE_KEY] = count
+
+    # Pull available_companies/requested_name from the first genuine
+    # "no mock data" error dict within `errors` -- distinguished from an
+    # empty {} placeholder (a missing state key) by actually having an
+    # "error" key.
+    real_error = next((s for s in errors if "error" in s), {})
+    available = real_error.get("available_companies", [])
+    requested = real_error.get("requested_name")
+    matches = difflib.get_close_matches(requested, available, n=1, cutoff=0.0) if requested and available else []
     return {
         "gather_ok": False,
         "may_retry": count <= _REPLAN_BUDGET,
-        "available_companies": errors[0].get("available_companies", []),
+        "available_companies": available,
+        "suggested_retry_name": matches[0] if matches else (available[0] if available else None),
     }
 
 
@@ -186,11 +210,13 @@ orchestrator_agent = Agent(
         "and never let it replace or alter the pipeline's own fresh "
         "result. If found=false, say nothing about it; a first-time "
         "analysis is normal, not a gap to apologize for.\n"
-        "  - If gather_ok is false and may_retry is true: pick whichever "
-        "name in available_companies is the closest match to what the "
-        "user actually asked for, and call full_analysis_pipeline again "
-        "with that corrected name — this is your one refined retry, not "
-        "a new unrelated request. Then call check_gather_status again.\n"
+        "  - If gather_ok is false and may_retry is true: call "
+        "full_analysis_pipeline again using check_gather_status's own "
+        "suggested_retry_name field directly, verbatim — it's already "
+        "computed for you via deterministic string matching, not "
+        "something to second-guess or pick yourself. This is your one "
+        "refined retry, not a new unrelated request. Then call "
+        "check_gather_status again.\n"
         "  - If gather_ok is still false (may_retry is now false, or the "
         "retry also failed): stop. Tell the user plainly that no data "
         "was found, even after checking for a close match, and name the "

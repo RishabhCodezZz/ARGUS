@@ -1,0 +1,27 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# This codebase's own house style runs long, heavily-commented docstrings
+# explaining *why*, not just *what* -- that's a deliberate project
+# convention (see CLAUDE.md), not a lint violation. E501 (line too long)
+# is excluded so ruff flags real correctness issues (unused imports,
+# undefined names, etc.) instead of flooding on style it was never
+# written to conform to.
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# load_dotenv() must run before the ADK/agent imports below it, since
+# those modules read env vars (GOOGLE_API_KEY) at import time -- moving
+# the imports to the top would break that ordering on purpose.
+"argus/eval/ablation.py" = ["E402"]
+
+[tool.pyright]
+include = ["argus"]
+exclude = ["**/.venv", "**/__pycache__"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "basic"
+reportMissingImports = true

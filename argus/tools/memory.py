@@ -47,7 +47,7 @@ from google.adk.events import Event
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
-from argus.state_keys import DRAFT_THESIS, EVIDENCE_FILINGS, META_GROUNDEDNESS
+from argus.state_keys import DRAFT_THESIS, EVIDENCE_FILINGS, META_GROUNDEDNESS, META_HUMAN
 
 
 def _parse_state_json(raw) -> dict:
@@ -115,10 +115,19 @@ async def remember_finding(tool_context: ToolContext) -> dict:
     no arguments.
 
     Returns:
-        dict with "remembered" (bool) — false only if there's no usable
-        entity in state (e.g. called at the wrong time), which is safe to
-        ignore.
+        dict with "remembered" (bool) — false if there's no usable entity
+        in state, or if the result was never approved (see below), both
+        safe to ignore.
     """
+    # Same code-level enforcement as save_memo (argus/tools/memo.py) --
+    # a rejected result must never be persisted, and the ONLY thing that
+    # previously stopped it was the calling agent's own instructions.
+    # Fail closed: anything other than an explicit approve/auto_approve
+    # blocks the write, including a missing decision entirely.
+    human_decision = tool_context.state.get(META_HUMAN) or {}
+    if human_decision.get("decision") not in ("approve", "auto_approved"):
+        return {"remembered": False}
+
     filings = _parse_state_json(tool_context.state.get(EVIDENCE_FILINGS))
     entity = extract_entity_name(filings)
     if entity is None:

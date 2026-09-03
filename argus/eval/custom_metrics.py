@@ -110,8 +110,14 @@ def recompute_quant_metrics(filings: dict, market: dict) -> set[float]:
 
     if len(years) >= 2:
         first, last = years[0], years[-1]
-        n = len(years) - 1
-        cagr = ((last["revenue_usd_millions"] / first["revenue_usd_millions"]) ** (1 / n) - 1) * 100
+        # Elapsed fiscal years, not row count -- len(years)-1 only equals
+        # the real elapsed span when the years are consecutive. Current
+        # mock data always is, so this was silently correct today, but
+        # sparse data (e.g. only 2021 and 2025 present) would give n=1
+        # instead of the real 4, wildly inflating the computed CAGR.
+        # Found by an external code review.
+        n = last["year"] - first["year"]
+        cagr = ((last["revenue_usd_millions"] / first["revenue_usd_millions"]) ** (1 / n) - 1) * 100 if n else 0.0
         numbers.add(round(cagr, 2))
         numbers.add(round(last["total_debt_usd_millions"] - first["total_debt_usd_millions"], 2))
 
@@ -337,8 +343,8 @@ def tool_names_trajectory(
     per_invocation_results = []
     total = 0.0
     for actual, expected in zip(actual_invocations, expected_invocations):
-        actual_names = [c.name for c in get_all_tool_calls(actual.intermediate_data)]
-        expected_names = [c.name for c in get_all_tool_calls(expected.intermediate_data)]
+        actual_names = [c.name for c in get_all_tool_calls(actual.intermediate_data) if c.name]
+        expected_names = [c.name for c in get_all_tool_calls(expected.intermediate_data) if c.name]
         matched = names_in_order_match(actual_names, expected_names)
         score = 1.0 if matched else 0.0
         total += score
@@ -371,7 +377,7 @@ def numeric_fidelity(
     per_invocation_results = []
     scores = []
     for actual in actual_invocations:
-        tool_names = [c.name for c in get_all_tool_calls(actual.intermediate_data)]
+        tool_names = [c.name for c in get_all_tool_calls(actual.intermediate_data) if c.name]
         if not has_quant_relevant_tool(tool_names):
             continue
         text = _response_text(actual)
@@ -465,7 +471,7 @@ def contradiction_correctness(
     per_invocation_results = []
     scores = []
     for actual in actual_invocations:
-        tool_names = [c.name for c in get_all_tool_calls(actual.intermediate_data)]
+        tool_names = [c.name for c in get_all_tool_calls(actual.intermediate_data) if c.name]
         if not has_reconciliation_tool(tool_names):
             continue
         text = _response_text(actual)

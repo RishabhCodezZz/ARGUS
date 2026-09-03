@@ -110,6 +110,17 @@ async def save_memo(tool_context: ToolContext) -> dict:
         the filename to the user in one short line. "saved": false is
         safe to ignore, same as remember_finding.
     """
+    # Code-level enforcement, not just the Orchestrator's own instruction
+    # text: an external review confirmed this tool would happily save a
+    # memo even with meta.human.decision == "reject", since previously
+    # the ONLY thing stopping that was the calling agent following its
+    # instructions correctly, every single time. Fail closed: anything
+    # other than an explicit approve/auto_approve blocks the save,
+    # including a missing decision entirely.
+    human_decision = tool_context.state.get(META_HUMAN) or {}
+    if human_decision.get("decision") not in ("approve", "auto_approved"):
+        return {"saved": False}
+
     filings = _parse_state_json(tool_context.state.get(EVIDENCE_FILINGS))
     entity = extract_entity_name(filings)
     if entity is None:
@@ -120,7 +131,6 @@ async def save_memo(tool_context: ToolContext) -> dict:
 
     thesis = tool_context.state.get(DRAFT_THESIS, "")
     groundedness = tool_context.state.get(META_GROUNDEDNESS)
-    human_decision = tool_context.state.get(META_HUMAN) or {}
     generated_at = datetime.now(timezone.utc)
 
     markdown = build_memo(

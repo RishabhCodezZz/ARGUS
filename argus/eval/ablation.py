@@ -127,6 +127,12 @@ async def _run_once(agent, prompt: str, app_name: str) -> dict:
     async for _event in runner.run_async(user_id=user_id, session_id=session.id, new_message=content):
         pass
     final_session = await session_service.get_session(app_name=app_name, user_id=user_id, session_id=session.id)
+    if final_session is None:
+        # get_session is typed to return None on a lookup miss -- caught
+        # by adding Pyright to this project's tooling for the first time.
+        # Shouldn't happen (we just created this exact session above), but
+        # a clear error here beats an AttributeError on .state below.
+        raise RuntimeError(f"Session {session.id!r} vanished before its final state could be read.")
     return {
         "thesis": final_session.state.get(DRAFT_THESIS, ""),
         "groundedness": final_session.state.get(META_GROUNDEDNESS),

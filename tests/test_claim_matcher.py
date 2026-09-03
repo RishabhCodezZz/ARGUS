@@ -5,7 +5,12 @@ Groundedness Verifier's whole trustworthiness claim rests on, so it gets a
 real test rather than just live-demoing it and hoping.
 """
 
-from argus.tools.claim_matcher import compute_grounding, extract_numbers, is_grounded
+from argus.tools.claim_matcher import (
+    compute_grounding,
+    extract_numbers,
+    is_grounded,
+    normalize_for_extraction,
+)
 
 
 def test_extract_numbers_from_json_like_text():
@@ -58,3 +63,27 @@ def test_compute_grounding_flags_fabricated_number():
 def test_compute_grounding_no_claims_is_vacuously_fully_grounded():
     result = compute_grounding([], ["irrelevant source text"])
     assert result == {"grounded": [], "ungrounded": [], "groundedness_ratio": 1.0}
+
+
+# Regression tests for check_grounding's move to deterministic extraction
+# (an external code review found this was previously an LLM enumeration
+# step, letting a real number silently go unchecked in either direction).
+# These are the same real bugs the eval harness (argus/eval/custom_metrics.py)
+# found live, ported into production now that check_grounding reads the
+# draft's own prose text directly instead of trusting a supplied list.
+
+
+def test_normalize_strips_thousands_commas_so_number_stays_whole():
+    assert extract_numbers(normalize_for_extraction("$2,850 million")) == {2850.0}
+
+
+def test_normalize_preserves_sign_when_dollar_sign_sits_before_digits():
+    assert extract_numbers(normalize_for_extraction("-$57 million")) == {-57.0}
+
+
+def test_normalize_strips_iso_dates_entirely():
+    assert extract_numbers(normalize_for_extraction("Saved to memo_2026-08-01.md")) == set()
+
+
+def test_normalize_splits_a_bare_year_range():
+    assert extract_numbers(normalize_for_extraction("the 2021-2025 window")) == {2021.0, 2025.0}

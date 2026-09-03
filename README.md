@@ -67,7 +67,7 @@ the system are load-bearing, and publishes the result — including the part tha
 
 | | |
 |---|---|
-| **Golden scenarios** | 8 (3 narrow · 1 RAG · 4 broad) |
+| **Golden scenarios** | 8 (3 narrow · 1 keyword-retrieval · 4 broad) |
 | **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
 | **Groundedness, clean run** | **1.00** |
 | **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
@@ -144,7 +144,7 @@ tolerance bug described below.
 flowchart TD
     U[Your question] --> O{Orchestrator<br/>picks the cheapest sufficient path}
     O -->|"Narrow question<br/>~2-3 calls"| S[One Specialist Agent]
-    O -->|"Background question<br/>~2-3 calls"| R[Retrieval Agent · RAG]
+    O -->|"Background question<br/>~2-3 calls"| R[Retrieval Agent · keyword retrieval]
     O -->|"Full research<br/>~15-20 calls"| G
 
     subgraph PIPE [Full Analysis Pipeline]

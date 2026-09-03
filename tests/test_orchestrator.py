@@ -73,14 +73,29 @@ def test_uses_the_first_erroring_source_in_filings_market_sentiment_order():
     assert result["available_companies"] == ["Globex"]
 
 
-def test_state_never_populated_reads_as_gather_ok():
-    # Documents a real precondition, not a bug: check_gather_status only
-    # looks for an explicit "error" key. If evidence.* was never written at
-    # all (state completely empty), _parse_state_json(None) returns {} for
-    # every source -- no "error" key found, so this reads as success. The
-    # function's docstring says to call it "immediately after every
-    # full_analysis_pipeline call", which always populates evidence.* one
-    # way or another -- this test exists to make that assumption explicit
-    # and pin the actual behavior if it's ever called before that.
+def test_state_never_populated_reads_as_failure_not_success():
+    # Regression test for a real bug (found by an external code review):
+    # this used to read empty/missing evidence.* state as a *successful*
+    # gather, since _parse_state_json(None) returns {}, which has no
+    # "error" key. That meant a model that skipped calling
+    # full_analysis_pipeline entirely (or stale/cleared state) would sail
+    # through as gather_ok=True. Empty state must now count as failure.
     ctx = _FakeToolContext({})
-    assert check_gather_status(ctx) == {"gather_ok": True}
+    result = check_gather_status(ctx)
+    assert result["gather_ok"] is False
+
+
+def test_suggested_retry_name_matches_the_closest_available_company():
+    # Regression test for a real gap (found by an external code review):
+    # the retry target used to be a judgment call left entirely to the
+    # model's own reading of available_companies -- nothing guaranteed it
+    # picked the same match a deterministic comparison would.
+    state = _clean_state()
+    state[EVIDENCE_FILINGS] = {
+        "error": "No mock data for 'Globexx'.",
+        "available_companies": ["Acme Corp", "Globex"],
+        "requested_name": "Globexx",
+    }
+    ctx = _FakeToolContext(state)
+    result = check_gather_status(ctx)
+    assert result["suggested_retry_name"] == "Globex"

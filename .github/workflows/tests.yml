@@ -9,6 +9,9 @@ name: Tests
 # every single push. Run it on demand locally instead -- see "Evaluation
 # and the ablation experiment" in README.md, and "Reproducing the results"
 # in DEVLOG.md for the exact commands.
+#
+# The `lint` job (Ruff + Pyright) is separate and also zero-cost/zero-API --
+# static analysis only, same free-tier-safe guarantee as `pytest`.
 
 on:
   push:
@@ -31,3 +34,21 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff (lint)
+        run: ruff check argus/ tests/
+
+      - name: Pyright (type check)
+        run: pyright argus/
