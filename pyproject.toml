@@ -3,7 +3,11 @@ line-length = 100
 target-version = "py312"
 # This codebase's own house style runs long, heavily-commented docstrings
 # explaining *why*, not just *what* -- that's a deliberate project
-# convention (see CLAUDE.md), not a lint violation. E501 (line too long)
+# convention (see the "Bugs" section of README.md for examples), not a
+# lint violation -- CLAUDE.md, the file that originally stated this
+# convention, is a local planning doc and deliberately gitignored, so it
+# isn't a valid reference for anyone reading this file from the public
+# repo. E501 (line too long)
 # is excluded so ruff flags real correctness issues (unused imports,
 # undefined names, etc.) instead of flooding on style it was never
 # written to conform to.

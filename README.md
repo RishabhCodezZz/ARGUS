@@ -71,7 +71,7 @@ the system are load-bearing, and publishes the result — including the part tha
 | **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
 | **Groundedness, clean run** | **1.00** |
 | **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
-| **Unit tests** | 105, pure Python, no API key, runs in seconds |
+| **Unit tests** | 113, pure Python, no API key, runs in seconds |
 | **Lint / type-check** | Ruff + Pyright, both clean, same zero-cost guarantee |
 | **Cost to reproduce** | $0 |
 
@@ -248,7 +248,7 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 python -m pytest tests/ -v
 ```
 
-105 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
+113 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
 the model-facing behavior is verified by live runs documented in [DEVLOG.md](DEVLOG.md).
 
 ```bash

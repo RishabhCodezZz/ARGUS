@@ -101,8 +101,19 @@ def compute_grounding(claimed_numbers: list[float], source_texts: list[str]) -> 
     """Pure grounding-check logic: is each claimed number backed by
     something in source_texts, within rounding tolerance? No ADK
     dependency — this is what the unit tests exercise directly.
+
+    source_texts is normalized the same way normalize_for_extraction
+    handles the draft — real evidence (market price dates, headline
+    dates) genuinely contains ISO dates, and an un-normalized date's day
+    component (e.g. the "-01" in "2025-01-01") is itself a valid-looking
+    small number. Found by an external code review with a real repro: a
+    fabricated "-$1M loss" claim (normalizes to -1.0) matched the "-01"
+    inside an unrelated source date and scored a false 1.0. Without this,
+    the fix that made check_grounding read the draft deterministically
+    was only half done — the same un-normalized-text risk was still
+    sitting on the other side of the comparison.
     """
-    known_numbers = extract_numbers(" ".join(source_texts))
+    known_numbers = extract_numbers(normalize_for_extraction(" ".join(source_texts)))
     grounded = [n for n in claimed_numbers if is_grounded(n, known_numbers)]
     ungrounded = [n for n in claimed_numbers if n not in grounded]
     ratio = len(grounded) / len(claimed_numbers) if claimed_numbers else 1.0

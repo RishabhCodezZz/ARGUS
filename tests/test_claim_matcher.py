@@ -87,3 +87,17 @@ def test_normalize_strips_iso_dates_entirely():
 
 def test_normalize_splits_a_bare_year_range():
     assert extract_numbers(normalize_for_extraction("the 2021-2025 window")) == {2021.0, 2025.0}
+
+
+def test_compute_grounding_normalizes_source_text_too_not_just_claims():
+    # Regression test for a real, reproduced bug (found by an external
+    # code review): compute_grounding normalized the draft's own claims
+    # but extracted "known" numbers from raw, un-normalized source text.
+    # A date's day component looks exactly like a small real number --
+    # "2025-01-01" contains "-01" -- so a fabricated "-$1M loss" (which
+    # normalizes to -1.0) matched the "-01" inside an unrelated source
+    # date and scored a false, perfect groundedness_ratio of 1.0.
+    source = ['{"date": "2025-01-01"}']
+    result = compute_grounding([-1.0], source)
+    assert result["ungrounded"] == [-1.0]
+    assert result["groundedness_ratio"] == 0.0
