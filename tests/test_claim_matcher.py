@@ -130,6 +130,40 @@ def test_normalize_does_not_eat_may_as_a_verb():
     assert extract_numbers(normalize_for_extraction("revenue may reach 900 next year")) == {900.0}
 
 
+# "loss of $N": financial English states a loss as a positive magnitude
+# ("a net loss of $57 million"), but the filings store net income signed
+# (-57). Found live as the only reason two clean Globex contradiction runs
+# scored 0.9583 and routed to human review.
+
+
+def test_normalize_signs_a_dollar_loss_amount():
+    assert extract_numbers(normalize_for_extraction("reported a net loss of $57 million")) == {-57.0}
+
+
+def test_normalize_signs_a_loss_with_thousands_separator():
+    assert extract_numbers(normalize_for_extraction("posted losses of $1,550 million")) == {-1550.0}
+
+
+def test_normalize_leaves_a_percent_loss_alone():
+    # no "$" -> this is not a currency figure; evidence has a real +8 here
+    assert extract_numbers(normalize_for_extraction("layoffs, a loss of 8% of the workforce")) == {8.0}
+
+
+def test_normalize_does_not_touch_a_profit_amount():
+    assert extract_numbers(normalize_for_extraction("a profit of $88 million, up sharply")) == {88.0}
+
+
+def test_loss_restatement_now_grounds_against_signed_filing():
+    # end to end: "$57 million loss" in the draft vs -57 in the evidence
+    draft_numbers = sorted(extract_numbers(normalize_for_extraction(
+        "Globex recorded a net loss of $57 million in fiscal year 2024."
+    )))
+    source = ['{"net_income_usd_millions": -57, "year": 2024}']
+    result = compute_grounding(draft_numbers, source)
+    assert result["ungrounded"] == []
+    assert result["groundedness_ratio"] == 1.0
+
+
 def test_compute_grounding_normalizes_source_text_too_not_just_claims():
     # Regression test for a real, reproduced bug (found by an external
     # code review): compute_grounding normalized the draft's own claims

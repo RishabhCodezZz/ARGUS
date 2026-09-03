@@ -436,6 +436,21 @@ Every stage of this project, what was built, and how it was verified live. See t
   both Globex runs to 1.0 — not yet applied, pending a call on scope). 127 tests total (up from 120),
   `ruff` / `pyright` clean.
 
+- **Loss-sign normalization (2026-09-03, follow-up)** — applied the second fix above.
+  `_negate_loss_amounts` rewrites `"(net) loss of $57 million"` → `"-57 million"` before extraction,
+  so a loss narrated as a positive magnitude (standard financial English) grounds against the filing's
+  signed `net_income_usd_millions: -57`. Gated on a literal `"$"` — `"a loss of 8% of the workforce"`
+  (a real `+8` in the evidence) is left untouched; `"a profit of $88 million"` is never negated.
+  Ordered before `_strip_currency_formatting` (which removes the `"$"` it depends on).
+  **Re-verified against the full verbatim drafts + evidence of both real flagged sessions**
+  (adb83dd9 / 30948572): `0.9615 → 1.0000` and `0.9259 → 1.0000`, both now auto-approve, 0 ungrounded.
+  Combined with the prose-date fix, the two dropped tokens are `"Q2"`→2 and the `"January 31"`/
+  `"December 31"` day, both of which had only been "grounded" before by coincidental ±0.5 matches
+  (`2`↔`2.5`, `31`↔`31.2`). Adversarial detection is intact: the injected fake `"2026"` and
+  `"$5 billion"` are neither dates nor `"loss of $"` so they still flag (covered by
+  `test_is_grounded_rejects_adjacent_year` / `test_compute_grounding_flags_fabricated_number`).
+  132 tests total (up from 127), `ruff` / `pyright` / `compileall` clean.
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base

@@ -110,12 +110,32 @@ def _split_digit_ranges(text: str) -> str:
     return _DIGIT_RANGE_DASH_RE.sub(" ", text)
 
 
+_LOSS_OF_RE = re.compile(r"\bloss(?:es)?\s+of\s+\$\s*(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _negate_loss_amounts(text: str) -> str:
+    """Rewrites "(net) loss of $57 million" -> "-57 million" before number
+    extraction. Standard financial-English phrasing states a loss as a
+    positive magnitude with the word "loss" carrying the sign, but the
+    filings store it signed (net_income_usd_millions: -57). Without this,
+    a correct "$57 million loss" narration extracts as +57, matches
+    nothing (the evidence has -57), and gets flagged [UNVERIFIED] — found
+    live as the sole reason two clean Globex contradiction runs scored
+    0.9583 and routed to human review. Gated on a literal "$" so the
+    common non-financial "loss of 8% of the workforce" (a real +8 in the
+    evidence) is left completely alone. Must run before
+    _strip_currency_formatting, which removes the "$" this relies on."""
+    return _LOSS_OF_RE.sub(lambda m: "-" + m.group(1), text)
+
+
 def normalize_for_extraction(text: str) -> str:
     """Composes all cleanup steps before extract_numbers. Run this on any
     human-written prose (never on raw JSON, which doesn't need it) before
     trusting its numbers to be read correctly."""
     return _split_digit_ranges(
-        _strip_currency_formatting(_strip_prose_dates(_strip_dates(text)))
+        _strip_currency_formatting(
+            _negate_loss_amounts(_strip_prose_dates(_strip_dates(text)))
+        )
     )
 
 

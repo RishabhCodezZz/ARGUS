@@ -427,6 +427,11 @@ are **not** independently live-verified — the human gate's `redirect` branch a
   which is fixed. Structured metric/unit/year matching would close it; deferred rather than rushed,
   for the same reason as the retry and memory gaps above. Treat the groundedness score as a strong
   check on *numeric fabrication*, not as proof every figure is used in its correct context.
+  Two *specific* pre-extraction normalizations were added after live tuning showed clean runs
+  systematically missing the 0.98 bar on phrasing alone: prose calendar dates ("January 22, 2025",
+  "Q2 2025") are stripped so a narrated day-of-month isn't scored as a claim, and `"loss of $57
+  million"` is signed to `-57` so it grounds against a filing's signed net income. Neither loosens
+  fabrication detection — a `$`-less "loss of 8%" and an injected fake year are both untouched.
 - **The cross-run memory is a *runtime* store, not a durable one.** It uses ADK's
   `InMemoryMemoryService`: a later run on a company it has already seen starts warm, but only within
   the same running process — the store is cleared on restart. A cross-restart version would need a
