@@ -12,7 +12,7 @@ from google.adk.agents.llm_agent import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS
-from argus.config import MODEL_FLASH
+from argus.config import MODEL_REVIEW
 from argus.state_keys import (
     ANALYSIS_QUANT,
     DRAFT_THESIS,
@@ -50,7 +50,7 @@ def _refiner_instruction(context: ReadonlyContext) -> str:
 
 
 refiner_agent = Agent(
-    model=MODEL_FLASH,
+    model=MODEL_REVIEW,
     name="refiner_agent",
     description="Rewrites the draft thesis to address the Critic's critique.",
     instruction=_refiner_instruction,
