@@ -89,6 +89,47 @@ def test_normalize_splits_a_bare_year_range():
     assert extract_numbers(normalize_for_extraction("the 2021-2025 window")) == {2021.0, 2025.0}
 
 
+# Prose calendar dates: a narrated "January 22, 2025" contributes a bare
+# "22" that is not a financial claim but gets extracted as one and then
+# flagged ungrounded (nothing in the evidence is a bare 22). Found live:
+# two clean Globex runs dropped below the 0.98 auto-approval bar with a
+# narrated calendar day as the only (or dominant) unmatched value.
+
+
+def test_normalize_strips_month_day_year_date():
+    assert extract_numbers(normalize_for_extraction("a headline on January 22, 2025 said")) == set()
+
+
+def test_normalize_strips_month_day_without_year():
+    assert extract_numbers(normalize_for_extraction("closed at 22.9 on December 31, in line")) == {22.9}
+
+
+def test_normalize_strips_abbreviated_month_date():
+    assert extract_numbers(normalize_for_extraction("filed Dec 31 and again Mar 5")) == set()
+
+
+def test_normalize_strips_month_year():
+    assert extract_numbers(normalize_for_extraction("layoffs began in March 2025 broadly")) == set()
+
+
+def test_normalize_strips_quarter_references():
+    assert extract_numbers(normalize_for_extraction("a wider Q2 2025 loss, worse than Q4")) == set()
+
+
+def test_normalize_keeps_real_numbers_next_to_a_prose_date():
+    # the date goes, the actual figures stay
+    got = extract_numbers(normalize_for_extraction(
+        "On January 22, 2025 revenue was 812.4 with a 7.52% CAGR"
+    ))
+    assert got == {812.4, 7.52}
+
+
+def test_normalize_does_not_eat_may_as_a_verb():
+    # "may" is a month name but also a common modal verb - only strip it
+    # when it is followed by a day/year like a real date
+    assert extract_numbers(normalize_for_extraction("revenue may reach 900 next year")) == {900.0}
+
+
 def test_compute_grounding_normalizes_source_text_too_not_just_claims():
     # Regression test for a real, reproduced bug (found by an external
     # code review): compute_grounding normalized the draft's own claims

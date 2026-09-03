@@ -414,6 +414,28 @@ Every stage of this project, what was built, and how it was verified live. See t
   `RESOURCE_EXHAUSTED` — that still surfaces once ~30s of backoff is exhausted. 120 tests still green,
   `ruff` / `pyright` clean.
 
+- **Prose-date normalization in the grounding check (2026-09-03)** — live testing showed most *broad*
+  runs routing to the HITL gate: groundedness landing at 0.87–0.96, under the strict 0.98 bar. Pulled
+  the real session state and re-ran `compute_grounding` to find why. Root cause: the earlier
+  external-review fix made `check_grounding` extract **every numeric literal** from the draft's own
+  prose (instead of an LLM-supplied shortlist), but `normalize_for_extraction` only stripped **ISO**
+  dates. Evidence JSON uses ISO (so its dates are removed on the source side), but the thesis narrates
+  dates in words — "a headline on January 22, 2025" — and the bare day number ("22") gets extracted as
+  a financial claim, matches nothing, and is flagged `[UNVERIFIED]`. On a real Globex run that single
+  narrated "22" was the entire reason it scored 0.9259. The 0.98 bar was calibrated against the *old*
+  LLM-shortlist behaviour and never moved; with exhaustive extraction one stray token (1/26) already
+  fails it. Fix: `_strip_prose_dates` — removes "January 22, 2025", "Dec 31", "March 2025", "Q2 2025",
+  "Q4" before extraction, on both draft and source. `"may"` is only stripped when followed by a
+  day/year (it's also a modal verb — covered by a test). **Re-verified against the two real flagged
+  runs**: a synthetic-but-representative *profitable* company (Acme-type, no losses) goes 0.87-class →
+  **1.0000, auto-approve**; the two real Globex runs improve (the spurious "22" is gone) but still land
+  at **0.9583**, because of a *second, separate* cause not addressed here — "net **loss** of **$57**
+  million" in prose vs `-57` in the filing (the value-only/sign limitation already in the README's
+  known gaps). Date fix fully solves the no-loss case; loss/contradiction runs need the sign fix too
+  (prototype: `"(net) loss of $N"` → `-N`, `$`-gated so "loss of 8% of workforce" is untouched — takes
+  both Globex runs to 1.0 — not yet applied, pending a call on scope). 127 tests total (up from 120),
+  `ruff` / `pyright` clean.
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base

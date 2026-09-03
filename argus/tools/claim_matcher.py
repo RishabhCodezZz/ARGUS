@@ -59,6 +59,35 @@ def _strip_dates(text: str) -> str:
     return _ISO_DATE_RE.sub(" ", text)
 
 
+_MONTH = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|"
+    r"dec(?:ember)?)"
+)
+_PROSE_DATE_RE = re.compile(
+    r"\b" + _MONTH + r"\.?\s+\d{1,2}(?:\s*,?\s*\d{4})?\b"  # "January 22, 2025", "Dec 31"
+    r"|\b" + _MONTH + r"\.?\s+\d{4}\b"  # "March 2025"
+    r"|\bq[1-4]\b(?:\s+(?:of\s+)?(?:fy\s*)?\d{4})?",  # "Q2 2025", "Q4"
+    re.IGNORECASE,
+)
+
+
+def _strip_prose_dates(text: str) -> str:
+    """Removes calendar dates written out in words — "January 22, 2025",
+    "Dec 31", "March 2025", "Q2 2025", "Q4" — before number extraction.
+
+    _strip_dates above only catches the ISO form. Evidence JSON uses ISO,
+    so its dates ARE removed on the source side; but the thesis narrates
+    the same dates in prose ("a headline on January 22, 2025"), and their
+    day / quarter numbers ("22", "31", "2") are not financial claims —
+    they just get extracted as if they were and then flagged ungrounded
+    because nothing in the evidence is a bare "22". Found live: two clean
+    Globex runs scored 0.9259 / 0.87 with the only (or dominant)
+    ungrounded value being a narrated calendar day, which then dropped
+    them below the 0.98 auto-approval bar for no real reason."""
+    return _PROSE_DATE_RE.sub(" ", text)
+
+
 _THOUSANDS_COMMA_RE = re.compile(r"(?<=\d),(?=\d{3}\b)")
 
 
@@ -85,7 +114,9 @@ def normalize_for_extraction(text: str) -> str:
     """Composes all cleanup steps before extract_numbers. Run this on any
     human-written prose (never on raw JSON, which doesn't need it) before
     trusting its numbers to be read correctly."""
-    return _split_digit_ranges(_strip_currency_formatting(_strip_dates(text)))
+    return _split_digit_ranges(
+        _strip_currency_formatting(_strip_prose_dates(_strip_dates(text)))
+    )
 
 
 def is_grounded(claim: float, known_numbers: set[float]) -> bool:
