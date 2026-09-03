@@ -71,7 +71,8 @@ the system are load-bearing, and publishes the result — including the part tha
 | **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
 | **Groundedness, clean run** | **1.00** |
 | **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
-| **Unit tests** | 100, pure Python, no API key, runs in seconds |
+| **Unit tests** | 105, pure Python, no API key, runs in seconds |
+| **Lint / type-check** | Ruff + Pyright, both clean, same zero-cost guarantee |
 | **Cost to reproduce** | $0 |
 
 ### Evaluation baseline
@@ -247,11 +248,19 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 python -m pytest tests/ -v
 ```
 
-100 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
+105 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
 the model-facing behavior is verified by live runs documented in [DEVLOG.md](DEVLOG.md).
 
-CI runs this suite on every push. It deliberately **never** runs `adk eval` — that needs a real API
-key and would burn free-tier quota on every commit.
+```bash
+pip install -r requirements-dev.txt
+ruff check argus/ tests/
+pyright argus/
+```
+
+Lint and type-check, same zero-API-cost guarantee as the test suite above.
+
+CI runs all three (`pytest`, Ruff, Pyright) on every push. It deliberately **never** runs `adk eval`
+— that needs a real API key and would burn free-tier quota on every commit.
 
 ## Reproducing the evaluation
 
@@ -341,14 +350,55 @@ safety net; instructions are just the optimization.
 wrong — all six bugs were in the harness's own number parsing: a comma splitting `$2,850` into two
 claims, a `$` sitting between a minus sign and its digits flipping a real −$57M loss into +57. Fixed
 with regression coverage before trusting any result, and production `claim_matcher.py` was
-deliberately left untouched — you don't modify a verified production path to fix a measurement-only
-edge case. An unvalidated harness produces confident wrong numbers *about* your confident wrong
-numbers.
+deliberately left untouched at the time — you don't modify a verified production path to fix a
+measurement-only edge case. *That call got reversed later* (next entry) once the reason for it
+stopped being true.
 
 **The repo contradicted itself in public.** A cross-read of the docs against each other found the
 README describing a feature as reliably working while the dev log, in the same repo, documented it
 as ~50% reliable. The disclosure was the strength; hiding it was the liability — same principle as
 the section below.
+
+**A verifier that could pass by saying less.** The Groundedness Verifier's own tool
+(`check_grounding`) took a list of numbers *the calling model had already decided were worth
+checking* — it worked, but nothing forced that list to be complete, or even non-empty. An external
+code review (not internal testing — a second reviewer given the code cold) found the real failure
+mode: an under-enumerated list scores a vacuous, perfect 1.0, indistinguishable from a genuinely
+clean draft, and a number the draft literally stated could go unchecked without anyone noticing.
+Fixed by having the tool read the draft and extract its own numbers mechanically instead of trusting
+a supplied list — the model no longer decides what gets checked, only what to do with the result.
+This is also the reason the "measuring instrument" entry above got reversed: `check_grounding` now
+reads real draft prose directly, the same prose the eval harness's date/comma-parsing bugs were found
+in, so those fixes needed to move from eval-only into production `claim_matcher.py` after all.
+
+**Two tools that only refused politely.** `save_memo` and `remember_finding` each say, in their own
+docstrings, "never call this after a rejection" — and each would have run anyway if called after one,
+since nothing in the code actually checked. Confirmed live: calling either right after a real human
+rejection saved the memo and wrote to memory regardless. Both now refuse outright unless
+`meta.human.decision` is exactly `"approve"` or `"auto_approved"` — the same "code enforces it, a
+comment doesn't" rule this project states as a principle everywhere else, actually applied here.
+
+**Missing data and successful data looked the same.** If a broad request's evidence never actually
+got written to state — a skipped call, a stale session, anything leaving `evidence.filings/market/
+sentiment` empty — the gather-status check read that as success, because an empty result has no
+`"error"` key to notice. Now checked explicitly. **Generalizes to:** "no error" and "actually
+succeeded" are not the same claim, and code that treats them as interchangeable will eventually prove
+it the hard way.
+
+**A "closest match" nobody guaranteed matched.** The Orchestrator's one bounded retry, after a failed
+company lookup, asked the model to eyeball which name in a short list was closest to what the user
+actually meant — a real judgment call with no fallback if it judged wrong. Now computed with a plain
+string-distance comparison (`difflib`) before the model ever sees the choice.
+
+All four of the above were surfaced by a single external code review of this repo, not by further
+internal testing — a second, independent reader looking at the same code cold. Every finding was
+reproduced against the real code before being trusted, and reproduced again after the fix, the same
+verify-before-believing standard this README already asks of the system's own outputs, applied to a
+review *of* the system too. Ruff and Pyright were added to CI in the same pass (a new, separate,
+zero-API-cost lint job — see `.github/workflows/tests.yml`), and turned up three smaller, genuine
+issues of their own along the way: an under-typed recursive function in the injection-screening
+guardrail, four sites building a list from a field the ADK types as possibly `None`, and an
+un-null-checked session lookup in the ablation script. All fixed, all with regression coverage.
 
 ## Status & known gaps
 
@@ -358,8 +408,11 @@ artifacts, and the complete evaluation and ablation harness.
 
 **Stated plainly, because a disclosed gap beats a hidden one:**
 
-- **Retry-with-closest-match is ~50% reliable.** Across live runs it sometimes retries correctly and
-  sometimes gives up claiming no alternative exists. Real, documented, unfixed.
+- **Retry-with-closest-match is ~50% reliable.** *Which name* to retry with is now computed
+  deterministically (`difflib`, not a model judgment call — see "Bugs" above), but *whether* the
+  Orchestrator reliably attempts the retry at all is a separate, still-open question: across live
+  runs it has sometimes given up immediately, claiming no alternative exists when one clearly does.
+  Real, documented, not fully resolved by the name-matching fix.
 - **The `redirect` path of the human gate is implemented but not live-verified** — approve and reject
   both were, end to end.
 - **Groundedness matching is literal**, so a unit-converted restatement scores as ungrounded. Left
