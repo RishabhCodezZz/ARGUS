@@ -397,6 +397,23 @@ Every stage of this project, what was built, and how it was verified live. See t
   source and the narrated value is now disclosed as the largest remaining design improvement.
   120 tests total (up from 113), `ruff check` clean, `pyright` clean, `compileall` clean.
 
+- **Transient-503 hardening (2026-09-03)** — first live `adk web` test after the state-lifecycle pass
+  hit a `google.genai.errors.ServerError: 503 UNAVAILABLE` ("this model is currently experiencing high
+  demand") on one of the three parallel gatherers, which took down the whole run: ADK's `ParallelAgent`
+  uses an `asyncio.TaskGroup`, so the first sub-agent's `ServerError` cancels its siblings and
+  propagates as an `ExceptionGroup` to the root — the Dev UI just shows "an error occurred". Not a code
+  bug (transient upstream overload), but the pipeline had no retry: `google-genai` does **not** retry
+  unless `retry_options` is set explicitly, and it wasn't. Fixed in `config.py` — the `MODEL_*` names
+  are now configured `Gemini` instances (built from the same pinned IDs, all comments kept) carrying
+  `types.HttpRetryOptions(attempts=5, initial_delay=2.0, max_delay=30.0, exp_base=2.0)`, so a call gets
+  ~2s/4s/8s/16s backoff over google-genai's default retryable set (408, 429, 5xx). Agent files are
+  unchanged — `model=MODEL_FLASH` still works, ADK accepts a `BaseLlm` instance anywhere it takes an
+  id. **Verified live the same session:** a fresh narrow run hit another 503 mid-request, logged
+  `Retrying ... in 2.36 seconds as it raised ServerError: 503`, recovered on the retry, and returned
+  the correct answer (`$89.60 as of December 31, 2025`) instead of crashing. Does not mask a sustained
+  `RESOURCE_EXHAUSTED` — that still surfaces once ~30s of backoff is exhausted. 120 tests still green,
+  `ruff` / `pyright` clean.
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base
