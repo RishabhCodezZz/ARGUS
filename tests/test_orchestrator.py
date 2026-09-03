@@ -9,8 +9,23 @@ Runner/session/InvocationContext. Same approach as test_guardrails.py's
 enforce_tool_budget tests.
 """
 
-from argus.agents.orchestrator import _REPLAN_BUDGET, _REPLAN_STATE_KEY, check_gather_status
-from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
+from argus.agents.orchestrator import (
+    _REPLAN_BUDGET,
+    _REPLAN_STATE_KEY,
+    _stamp_request_id,
+    check_gather_status,
+)
+from argus.state_keys import (
+    EVIDENCE_FILINGS,
+    EVIDENCE_FILINGS_RUN_ID,
+    EVIDENCE_MARKET,
+    EVIDENCE_MARKET_RUN_ID,
+    EVIDENCE_SENTIMENT,
+    EVIDENCE_SENTIMENT_RUN_ID,
+    META_REQUEST_ID,
+)
+
+_REQ = "req-current"
 
 
 class _FakeToolContext:
@@ -19,10 +34,16 @@ class _FakeToolContext:
 
 
 def _clean_state():
+    # A genuine, fresh gather: evidence present, error-free, and every
+    # gatherer stamp matches the current request id.
     return {
+        META_REQUEST_ID: _REQ,
         EVIDENCE_FILINGS: {"company": "Acme Corp"},
         EVIDENCE_MARKET: {"company": "Acme Corp"},
         EVIDENCE_SENTIMENT: {"company": "Acme Corp"},
+        EVIDENCE_FILINGS_RUN_ID: _REQ,
+        EVIDENCE_MARKET_RUN_ID: _REQ,
+        EVIDENCE_SENTIMENT_RUN_ID: _REQ,
     }
 
 
@@ -83,6 +104,78 @@ def test_state_never_populated_reads_as_failure_not_success():
     ctx = _FakeToolContext({})
     result = check_gather_status(ctx)
     assert result["gather_ok"] is False
+
+
+def test_stale_evidence_from_a_prior_turn_is_rejected():
+    # Regression test for a real bug (found by an external code review):
+    # in a multi-turn session, evidence from a prior successful request
+    # stays populated and error-free. If the model skips
+    # full_analysis_pipeline on the next broad request but still calls
+    # check_gather_status, the old evidence must NOT read as gather_ok.
+    # Here _stamp_request_id has advanced meta.request_id for the new
+    # turn, but the three gatherer stamps still carry the prior id.
+    state = _clean_state()
+    state[META_REQUEST_ID] = "req-a-new-turn"  # gatherer stamps still "req-current"
+    ctx = _FakeToolContext(state)
+    result = check_gather_status(ctx)
+    assert result["gather_ok"] is False
+    assert result["stale"] is True
+    # A staleness failure is NOT a gather error, so it must not consume a
+    # re-plan attempt or hand back a closest-match retry name.
+    assert "suggested_retry_name" not in result
+    assert _REPLAN_STATE_KEY not in ctx.state
+
+
+def test_partially_stale_evidence_is_rejected():
+    # One gatherer re-ran this turn, the other two are left over. All
+    # three stamps must match the current request, not just one.
+    state = _clean_state()
+    state[EVIDENCE_MARKET_RUN_ID] = "req-stale"
+    state[EVIDENCE_SENTIMENT_RUN_ID] = "req-stale"
+    ctx = _FakeToolContext(state)
+    result = check_gather_status(ctx)
+    assert result["gather_ok"] is False
+    assert result["stale"] is True
+
+
+def test_missing_request_id_reads_as_stale():
+    # If _stamp_request_id never ran (no meta.request_id at all), fail
+    # closed rather than trusting whatever evidence happens to be around.
+    state = _clean_state()
+    del state[META_REQUEST_ID]
+    ctx = _FakeToolContext(state)
+    result = check_gather_status(ctx)
+    assert result["gather_ok"] is False
+    assert result["stale"] is True
+
+
+def test_same_turn_gather_error_is_not_reported_as_stale():
+    # A genuine "no mock data" error THIS turn (stamps match the current
+    # request) must still flow to the retry path, not the stale path.
+    state = _clean_state()
+    state[EVIDENCE_FILINGS] = {
+        "error": "No mock data for 'Initech'.",
+        "available_companies": ["Acme Corp", "Globex"],
+        "requested_name": "Initech",
+    }
+    ctx = _FakeToolContext(state)
+    result = check_gather_status(ctx)
+    assert result["gather_ok"] is False
+    assert result.get("stale") is not True
+    assert result["suggested_retry_name"] == "Globex"
+
+
+def test_stamp_request_id_writes_a_fresh_id_each_turn():
+    class _CbCtx:
+        def __init__(self):
+            self.state = {}
+
+    ctx = _CbCtx()
+    _stamp_request_id(ctx)
+    first = ctx.state[META_REQUEST_ID]
+    _stamp_request_id(ctx)
+    second = ctx.state[META_REQUEST_ID]
+    assert first and second and first != second
 
 
 def test_suggested_retry_name_matches_the_closest_available_company():

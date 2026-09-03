@@ -36,6 +36,22 @@ directly, and checking all three evidence.* keys there risks reading
 stale data left over from an earlier, unrelated question in the same
 session.
 
+That "stale data left over from an earlier question" risk is real for
+the broad path too, and check_gather_status now defends against it
+directly (external code review): _stamp_request_id (a before_agent_callback
+on this agent) writes a fresh meta.request_id every user turn — before
+the model picks any route, so it cannot be skipped — and each gatherer
+copies that id next to its evidence (gather.py). check_gather_status
+reports gather_ok only when all three copies match the current
+meta.request_id; otherwise it returns stale=true and the model is told
+to actually run full_analysis_pipeline. Without this, a multi-turn
+session where the model skipped the pipeline on a later broad request
+would still see the previous request's populated, error-free evidence
+and release a stale analysis. meta.request_id crosses INTO the pipeline's
+AgentTool run via the state snapshot agent_tool.py takes at call time,
+and the gatherer stamps cross back OUT via state_delta — the same
+boundary behaviour output_key already relies on.
+
 record_replan_attempt's counter is the hard cap — like Stage 2's
 exit_loop, the instruction is the fast path but the deterministic counter
 is what actually prevents runaway retries, not LLM promise-keeping.
@@ -98,7 +114,9 @@ persist a rejected analysis to disk before a human ever saw it.
 
 import difflib
 import json
+import uuid
 
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.llm_agent import Agent
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
@@ -109,13 +127,36 @@ from argus.agents.pipeline import full_analysis_pipeline
 from argus.agents.retrieval import retrieval_agent
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
+from argus.state_keys import (
+    EVIDENCE_FILINGS,
+    EVIDENCE_FILINGS_RUN_ID,
+    EVIDENCE_MARKET,
+    EVIDENCE_MARKET_RUN_ID,
+    EVIDENCE_SENTIMENT,
+    EVIDENCE_SENTIMENT_RUN_ID,
+    META_REQUEST_ID,
+)
 from argus.tools.hitl import evaluate_gate, record_human_decision, request_human_approval
 from argus.tools.memo import save_memo
 from argus.tools.memory import recall_prior_findings, remember_finding
 
 _REPLAN_BUDGET = 1
 _REPLAN_STATE_KEY = "meta.replan_count"
+
+
+def _stamp_request_id(callback_context: CallbackContext) -> None:
+    """before_agent_callback: give every user turn its own request id.
+
+    Runs unconditionally when the Orchestrator starts, before the model
+    picks any route — the model cannot skip it the way it can skip
+    calling full_analysis_pipeline. The gatherers copy this id next to
+    their evidence (gather.py), and check_gather_status requires all
+    three copies to match it — so evidence left in state by an earlier
+    turn is not mistaken for a fresh gather on a later broad request that
+    never actually re-ran the pipeline.
+    """
+    callback_context.state[META_REQUEST_ID] = uuid.uuid4().hex
+    return None
 
 
 def _parse_state_json(raw) -> dict:
@@ -134,13 +175,43 @@ def check_gather_status(tool_context: ToolContext) -> dict:
 
     Returns:
         dict with "gather_ok" (True if filings/market/sentiment all came
-        back without an error). If gather_ok is False: "may_retry"
+        back without an error AND were gathered by THIS request). If
+        gather_ok is False: "stale" (True when the evidence in state was
+        not produced by this request's own pipeline run — call
+        full_analysis_pipeline before doing anything else), "may_retry"
         (whether the re-plan budget still allows one more attempt),
         "available_companies" (the companies that DO exist), and
         "suggested_retry_name" (the closest match to what was actually
         requested, already computed for you — use it directly, don't
         pick your own match).
     """
+    # Freshness gate, before anything else: the evidence in state must
+    # carry THIS request's id (set by _stamp_request_id). A missing id, or
+    # any of the three gatherer stamps not matching it, means the pipeline
+    # did not gather for this request -- the state is left over from an
+    # earlier turn (or the model skipped full_analysis_pipeline entirely).
+    # Found by an external code review: in a multi-turn session, prior
+    # evidence stays valid-looking, so a skipped pipeline still read as
+    # gather_ok=True and could release stale analysis.
+    current_request = tool_context.state.get(META_REQUEST_ID)
+    stamps = (
+        tool_context.state.get(EVIDENCE_FILINGS_RUN_ID),
+        tool_context.state.get(EVIDENCE_MARKET_RUN_ID),
+        tool_context.state.get(EVIDENCE_SENTIMENT_RUN_ID),
+    )
+    if current_request is None or any(stamp != current_request for stamp in stamps):
+        return {
+            "gather_ok": False,
+            "stale": True,
+            "reason": (
+                "No evidence from this request's own full_analysis_pipeline "
+                "run is in state (it is missing, or left over from an "
+                "earlier turn). Call full_analysis_pipeline now and do not "
+                "present any analysis until check_gather_status returns "
+                "gather_ok=true."
+            ),
+        }
+
     sources = [
         _parse_state_json(tool_context.state.get(EVIDENCE_FILINGS)),
         _parse_state_json(tool_context.state.get(EVIDENCE_MARKET)),
@@ -211,6 +282,11 @@ orchestrator_agent = Agent(
         "and never let it replace or alter the pipeline's own fresh "
         "result. If found=false, say nothing about it; a first-time "
         "analysis is normal, not a gap to apologize for.\n"
+        "  - If check_gather_status returns stale=true: you have not run "
+        "full_analysis_pipeline for this request yet (or its evidence "
+        "didn't land). Call full_analysis_pipeline now with the company "
+        "the user actually asked about, then call check_gather_status "
+        "again. Never present analysis from state while stale=true.\n"
         "  - If gather_ok is false and may_retry is true: call "
         "full_analysis_pipeline again using check_gather_status's own "
         "suggested_retry_name field directly, verbatim — it's already "
@@ -293,6 +369,7 @@ orchestrator_agent = Agent(
         record_human_decision,
         save_memo,
     ],
+    before_agent_callback=_stamp_request_id,
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,
 )

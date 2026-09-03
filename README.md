@@ -71,7 +71,7 @@ the system are load-bearing, and publishes the result — including the part tha
 | **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
 | **Groundedness, clean run** | **1.00** |
 | **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
-| **Unit tests** | 113, pure Python, no API key, runs in seconds |
+| **Unit tests** | 120, pure Python, no API key, runs in seconds |
 | **Lint / type-check** | Ruff + Pyright, both clean, same zero-cost guarantee |
 | **Cost to reproduce** | $0 |
 
@@ -248,7 +248,7 @@ Open `http://localhost:8000`, pick the `argus` app, and try:
 python -m pytest tests/ -v
 ```
 
-113 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
+120 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
 the model-facing behavior is verified by live runs documented in [DEVLOG.md](DEVLOG.md).
 
 ```bash
@@ -285,8 +285,8 @@ argus/
   eval/                    deterministic metrics + the ablation runner
 data/                      mock company data (Acme Corp, Globex)
 eval/                      8 golden scenarios, scoring config, committed results
-tests/                     100 pytest tests
-.github/workflows/         CI (tests only, never adk eval)
+tests/                     120 pytest tests
+.github/workflows/         CI: pytest + Ruff + Pyright, every push (never adk eval)
 ```
 
 ## Deployment: built, measured, deliberately withdrawn
@@ -402,9 +402,11 @@ un-null-checked session lookup in the ablation script. All fixed, all with regre
 
 ## Status & known gaps
 
-Everything described above is built and verified live: the routing layer, the full pipeline, the
-self-critique loop, grounding verification, guardrails, memory, the human-approval gate, memo
-artifacts, and the complete evaluation and ablation harness.
+Every component described above is built and has been exercised end to end on real runs: the routing
+layer, the full pipeline, the self-critique loop, grounding verification, guardrails, memory, the
+human-approval gate, memo artifacts, and the evaluation and ablation harness. Two paths within that
+are **not** independently live-verified — the human gate's `redirect` branch and the bounded retry's
+*reliability* — and are called out below rather than folded into a blanket claim.
 
 **Stated plainly, because a disclosed gap beats a hidden one:**
 
@@ -431,6 +433,22 @@ artifacts, and the complete evaluation and ablation harness.
   custom SQLite-backed `MemoryService`; deferred on purpose (the non-in-memory implementations ADK
   ships are Vertex-AI-backed, which the fully-local decision rules out). See
   [DECISIONS.md](DECISIONS.md).
+- **`analysis.quant` is a grounding source *and* the thing being narrated.** The Verifier matches the
+  draft's numbers against the raw evidence **plus** the Quant agent's own computed output
+  ([`claim_matcher.py`](argus/tools/claim_matcher.py)). That's deliberate — it's how a legitimately
+  *derived* figure (CAGR, margin) scores as grounded at all — and the Quant agent runs real executed
+  code, not model estimation, so the computed values are re-derivable. But it does mean a derived
+  claim is checked partly against a figure the same pipeline produced, not a wholly independent
+  reference. The eval harness's `independent_groundedness` metric re-computes those metrics from raw
+  data specifically to avoid this, but the in-pipeline Verifier does not. The clean separation —
+  a second, independent computation path feeding the in-run Verifier — is the largest remaining design
+  improvement.
+- **The stale-evidence and stale-approval guards (below) are unit-tested, not yet multi-turn
+  live-verified.** `check_gather_status` now requires each gatherer's per-request stamp to match the
+  current turn, and `evaluate_gate` now resets `meta.human` to `pending_review` on any non-approval —
+  both covered by regression tests. The end-to-end multi-turn scenario (turn 2 skips the pipeline,
+  status tool correctly reports stale) still needs a live `adk web` pass, same as `check_gather_status`
+  has always been treated.
 
 See [DEVLOG.md](DEVLOG.md) for the full build history and [DECISIONS.md](DECISIONS.md) for design
 rationale.

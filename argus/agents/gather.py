@@ -13,14 +13,30 @@ raw payload, a transcription slip there would silently corrupt a number
 before the Quant agent ever sees it, undermining "numbers come from code,
 words come from the LLM" (the project's non-negotiable #1 rule). Forcing
 verbatim JSON out of the gatherers keeps that boundary exact.
+
+Each gatherer also carries an after_agent_callback that stamps its
+evidence with the current meta.request_id (a per-turn id set by the
+Orchestrator). check_gather_status uses those three stamps to tell fresh
+evidence apart from evidence left in state by an earlier turn — see
+orchestrator.py. Each stamp is its own unique key, same anti-collision
+rule as the evidence keys.
 """
 
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 
 from argus.callbacks.guardrails import MODEL_GUARDRAILS, TOOL_GUARDRAILS
 from argus.config import MODEL_FLASH
-from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
+from argus.state_keys import (
+    EVIDENCE_FILINGS,
+    EVIDENCE_FILINGS_RUN_ID,
+    EVIDENCE_MARKET,
+    EVIDENCE_MARKET_RUN_ID,
+    EVIDENCE_SENTIMENT,
+    EVIDENCE_SENTIMENT_RUN_ID,
+    META_REQUEST_ID,
+)
 from argus.tools.mock_data import get_filings, get_market_data, get_news
 
 _VERBATIM_JSON = (
@@ -28,6 +44,23 @@ _VERBATIM_JSON = (
     "no markdown, no code fences, no commentary before or after. Your "
     "entire reply must be exactly that JSON and nothing else."
 )
+
+
+def _stamp_freshness(stamp_key: str):
+    """Builds an after_agent_callback that tags this gatherer's evidence
+    with the current meta.request_id (set once per turn by the
+    Orchestrator's _stamp_request_id). check_gather_status later requires
+    all three tags to match the current request before it reports
+    gather_ok — so evidence from an earlier turn can't be mistaken for a
+    fresh gather if the model skips full_analysis_pipeline on a later
+    request. Each gatherer gets its OWN stamp key (parallel branches must
+    not share a state key — same rule as the evidence keys)."""
+
+    def _cb(callback_context: CallbackContext) -> None:
+        callback_context.state[stamp_key] = callback_context.state.get(META_REQUEST_ID)
+        return None
+
+    return _cb
 
 filings_agent = Agent(
     model=MODEL_FLASH,
@@ -40,6 +73,7 @@ filings_agent = Agent(
     ),
     tools=[get_filings],
     output_key=EVIDENCE_FILINGS,
+    after_agent_callback=_stamp_freshness(EVIDENCE_FILINGS_RUN_ID),
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,
 )
@@ -55,6 +89,7 @@ market_agent = Agent(
     ),
     tools=[get_market_data],
     output_key=EVIDENCE_MARKET,
+    after_agent_callback=_stamp_freshness(EVIDENCE_MARKET_RUN_ID),
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,
 )
@@ -70,6 +105,7 @@ sentiment_agent = Agent(
     ),
     tools=[get_news],
     output_key=EVIDENCE_SENTIMENT,
+    after_agent_callback=_stamp_freshness(EVIDENCE_SENTIMENT_RUN_ID),
     **MODEL_GUARDRAILS,
     **TOOL_GUARDRAILS,
 )

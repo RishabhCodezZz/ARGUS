@@ -129,6 +129,32 @@ lesson (rushed fixes to state/memory-boundary issues have twice produced a *new*
 is reason enough to scope them as separate work rather than force them into the same pass as smaller,
 independently-verifiable fixes.
 
+## State that outlives its turn is fixed with code, not instructions
+
+A later external-review pass found two bugs of the same shape: state from one turn staying valid-looking
+into a later turn where it shouldn't. Both are now handled deterministically rather than by asking the
+model to be careful.
+
+**Stale approval.** `evaluate_gate` used to write `meta.human` only when it auto-approved, so a prior
+run's approval could survive into a run that failed the gate. The fix writes `meta.human` on *every*
+outcome — `pending_review` on any non-approval — chosen over alternatives (clearing the key; a
+separate per-run gate-result key) because the two persistence tools already fail closed on "decision
+not in {approve, auto_approved}", so a sentinel they reject needs zero changes on their side and can't
+be confused with a real human verdict. It's transient: `record_human_decision` overwrites it the
+moment a human replies.
+
+**Stale evidence.** `check_gather_status` only checked that `evidence.*` was populated and error-free.
+The fix is a per-request stamp: a `before_agent_callback` on the Orchestrator writes a fresh
+`meta.request_id` every turn, each gatherer's `after_agent_callback` copies it next to its evidence,
+and the status tool requires all three to match. The stamp lives in a `before_agent_callback` (not a
+first mandatory tool, not ADK's own `invocation_id`) specifically because it must run on *every* turn
+regardless of which route the model picks — a tool the model forgets to call, or an id that only
+advances when the pipeline runs, would both leave the exact skip-the-pipeline case unprotected. This
+is the "guardrails live in callbacks, not prompt-begging" principle applied to freshness. The
+in-pipeline plumbing (parent state snapshotted into the `AgentTool` run, `state_delta` forwarded back
+out) was verified by reading `agent_tool.py`, not assumed — same discipline as the memory/HITL
+boundary findings.
+
 ## Why Google ADK
 
 It's the framework this project set out to learn, and it makes a few structural guarantees explicit

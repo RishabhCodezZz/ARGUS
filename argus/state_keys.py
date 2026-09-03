@@ -14,6 +14,19 @@ EVIDENCE_FILINGS = "evidence.filings"
 EVIDENCE_MARKET = "evidence.market"
 EVIDENCE_SENTIMENT = "evidence.sentiment"
 
+# Per-request freshness stamps (Stage 5 follow-up, external code review).
+# The Orchestrator's before_agent_callback writes META_REQUEST_ID once per
+# user turn; each gatherer's after_agent_callback copies that value next to
+# its own evidence key. check_gather_status then reports gather_ok only when
+# all three stamps match the CURRENT request -- so evidence left in state by
+# an earlier turn can't be mistaken for a fresh gather if the model skips
+# full_analysis_pipeline on a later broad request. Parallel gatherers each
+# write a UNIQUE stamp key, same rule as the evidence keys themselves.
+META_REQUEST_ID = "meta.request_id"
+EVIDENCE_FILINGS_RUN_ID = "evidence.filings_run_id"
+EVIDENCE_MARKET_RUN_ID = "evidence.market_run_id"
+EVIDENCE_SENTIMENT_RUN_ID = "evidence.sentiment_run_id"
+
 ANALYSIS_QUANT = "analysis.quant"
 ANALYSIS_RECONCILED = "analysis.reconciled"
 

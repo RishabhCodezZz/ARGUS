@@ -361,6 +361,42 @@ Every stage of this project, what was built, and how it was verified live. See t
   113 tests total (up from 100), `ruff check` clean, `pyright` clean — both added to CI in this pass,
   not just run locally.
 
+- **State-lifecycle pass (2026-09-03)** — two more real bugs from the external review, both about
+  state surviving longer than it should across turns in one `adk web` session:
+  - **A failed gate could inherit a prior approval.** `evaluate_gate` (`hitl.py`) wrote `meta.human`
+    only on auto-approval. So if an earlier run in the session auto-approved, then a later run failed
+    the gate, the stale `"auto_approved"` stayed in state — and a mistaken later `remember_finding` /
+    `save_memo` (or a resumed turn after a quota 429 on the wrap-up, a documented real scenario) would
+    pass their code-level approval checks and persist an unreviewed result. Fixed: every
+    non-auto-approved outcome now overwrites `meta.human` with `{"decision": "pending_review"}`, a
+    value no persistence tool accepts. `record_human_decision` still writes the real verdict once the
+    human replies, so `pending_review` only exists during the suspension window. Regression test in
+    `test_hitl.py`: start with an old approval, fail the gate, assert `meta.human` is `pending_review`
+    and that both `remember_finding` and `save_memo` refuse.
+  - **Gather-status accepted stale evidence as fresh.** `check_gather_status` (`orchestrator.py`) only
+    checked that the three `evidence.*` keys were populated and error-free. In a multi-turn session,
+    evidence from a prior successful broad request stays exactly that. If the model skipped the
+    pipeline on the next broad request but still called the status tool, it returned `gather_ok=True`
+    and could release stale analysis. Fixed with a per-request stamp: `_stamp_request_id` (a
+    `before_agent_callback` on the Orchestrator — runs every turn, before the model picks a route, so
+    it can't be skipped) writes a fresh `meta.request_id`; each gatherer's new `after_agent_callback`
+    copies that id next to its evidence (`gather.py`, unique key per gatherer — the parallel
+    anti-collision rule); `check_gather_status` now reports `gather_ok` only when all three stamps
+    match the current `meta.request_id`, else returns `stale=true` and the instruction tells the model
+    to actually run the pipeline. `meta.request_id` crosses into the pipeline's `AgentTool` run via
+    the state snapshot `agent_tool.py` takes at call time (verified by reading the source, lines
+    277-286), and the stamps cross back out via `state_delta` — the same boundary behaviour
+    `output_key` already relies on. Regression tests in `test_orchestrator.py`: fully stale, partially
+    stale, missing `meta.request_id`, and a same-turn gather error still routing to the retry path
+    (not the stale path). Multi-turn end-to-end still wants a live `adk web` pass — noted in the
+    README's known gaps, same treatment `check_gather_status` has always had.
+
+  Also this pass: README corrected (`100 pytest tests` → 120, and the project tree now says CI runs
+  Ruff + Pyright, not "tests only"); the blanket "everything is verified live" line now names the two
+  paths that aren't (`redirect`, retry reliability); and `analysis.quant` being both a grounding
+  source and the narrated value is now disclosed as the largest remaining design improvement.
+  120 tests total (up from 113), `ruff check` clean, `pyright` clean, `compileall` clean.
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base

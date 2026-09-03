@@ -99,9 +99,10 @@ def evaluate_gate(tool_context: ToolContext) -> dict:
 
     Returns:
         dict with "auto_approved" (bool) and "reason". If auto_approved is
-        true, meta.human is already recorded for you — go ahead and
-        present the result. If false, do NOT present anything yet; call
-        request_human_approval next.
+        true, meta.human is recorded as "auto_approved" for you — go ahead
+        and present the result. If false, meta.human is reset to
+        "pending_review" (so nothing persists until a human decides) and
+        you must NOT present anything yet; call request_human_approval next.
     """
     groundedness = tool_context.state.get(META_GROUNDEDNESS)
     critique = tool_context.state.get(REVIEW_CRITIQUE, "")
@@ -109,6 +110,19 @@ def evaluate_gate(tool_context: ToolContext) -> dict:
     if result["auto_approved"]:
         tool_context.state[META_HUMAN] = {
             "decision": "auto_approved",
+            "reason": result["reason"],
+        }
+    else:
+        # Overwrite any approval left in meta.human by an EARLIER run in
+        # this session. Without this, a prior run's "auto_approved" (or a
+        # prior human "approve") survives into a run that just failed the
+        # gate -- and a mistaken later call to remember_finding / save_memo
+        # would pass their code-level approval checks and persist an
+        # unreviewed result. "pending_review" is deliberately not an
+        # accepted decision anywhere, so those tools stay fail-closed until
+        # record_human_decision writes a real verdict for THIS run.
+        tool_context.state[META_HUMAN] = {
+            "decision": "pending_review",
             "reason": result["reason"],
         }
     return result
