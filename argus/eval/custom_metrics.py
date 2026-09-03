@@ -42,7 +42,20 @@ from google.adk.evaluation.eval_metrics import EvalMetric
 from google.adk.evaluation.evaluator import EvalStatus, EvaluationResult, PerInvocationResult
 
 from argus.tools.claim_matcher import compute_grounding, extract_numbers
+from argus.tools.claim_matcher import normalize_for_extraction as _normalize_for_extraction
 from argus.tools.reconciler import find_contradictions
+
+# Number normalization comes from production claim_matcher.py, not a copy
+# here. It used to be a private copy in this file (scoped "eval-only" at
+# the time); those exact steps were later ported into production, and then
+# production grew two more (prose calendar dates like "January 22, 2025",
+# and "loss of $57M" -> -57) that this copy never got — so a clean broad
+# run scored 0.8929 independent_groundedness here while the real Verifier
+# scored the same draft 1.0. claim_matcher is now the single source of
+# truth. The metric stays independent where it actually matters — the
+# SOURCE of ground truth (recompute_quant_metrics + raw mock data), not
+# the number-parsing, which should be byte-identical to what the system
+# under test uses.
 
 _COMPANY_FILES = {
     "acme corp": "acme_corp",
@@ -210,83 +223,6 @@ def _query_text(invocation: Invocation) -> str:
     if not invocation.user_content or not invocation.user_content.parts:
         return ""
     return " ".join(p.text for p in invocation.user_content.parts if p.text)
-
-
-_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\b")
-
-
-def _strip_dates(text: str) -> str:
-    """Removes ISO dates (2025-02-10) before number extraction.
-
-    claim_matcher.py's extract_numbers uses a regex that treats a
-    leading "-" as a negative sign, so an un-stripped date like
-    "2025-02-10" is parsed as three separate claims: 2025, -2, -10.
-    Narrow specialist responses that relay dated headlines/prices
-    verbatim are full of these, which would otherwise tank their
-    numeric-fidelity/groundedness scores over formatting, not
-    substance. claim_matcher.py itself is left untouched — this
-    preprocessing is scoped to the eval harness only, since the real
-    Verifier's own drafts are prose, not date-heavy raw listings, and
-    this project doesn't touch a verified production path to fix an
-    eval-only edge case.
-
-    Deliberately no leading \\b: every broad-scenario response ends
-    with something like "Saved to memo: memo_acme_corp_2026-08-01.md",
-    and a leading \\b never matches between the underscore before
-    "2026" and the digit itself (both are \\w, so there's no boundary
-    there) -- the date silently survived stripping and leaked a
-    phantom 2026 (plus -8, -1) into groundedness/numeric-fidelity
-    claims. Caught live investigating an unexpectedly low
-    broad_clean_acme score, before running the other 3 (more
-    expensive) broad scenarios that all share this same memo-filename
-    suffix. Dropping the leading \\b is safe here: the dd-dd-dddd
-    literal shape doesn't otherwise occur in this project's mock data
-    or agent phrasing, and a standalone injected year (e.g. "2026"
-    alone, as in the adversarial-injection scenario) has no dashes, so
-    it's never matched by this pattern regardless of boundary.
-    """
-    return _ISO_DATE_RE.sub(" ", text)
-
-
-_THOUSANDS_COMMA_RE = re.compile(r"(?<=\d),(?=\d{3}\b)")
-
-
-def _strip_currency_formatting(text: str) -> str:
-    """Removes "$" and thousands-separator commas before number
-    extraction — the same class of bug as _strip_dates, found live
-    while investigating why narrow_filings scored low. claim_matcher.py's
-    extract_numbers has no comma handling, so "$2,850 million" is parsed
-    as two separate claims (2 and 850, never 2850). Worse, a "$" sitting
-    between a minus sign and its digits ("-$57 million") breaks the
-    adjacency extract_numbers relies on to read the sign, so the claim
-    comes back as a positive 57 instead of -57 — silently flipping the
-    sign of a real net loss. Stripping "$" first (so "-$57" -> "-57")
-    fixes both at once. Scoped to the eval harness only, same reasoning
-    as _strip_dates.
-    """
-    return _THOUSANDS_COMMA_RE.sub("", text.replace("$", ""))
-
-
-_DIGIT_RANGE_DASH_RE = re.compile(r"(?<=\d)-(?=\d)")
-
-
-def _split_digit_ranges(text: str) -> str:
-    """Splits a dash directly between two digit groups (e.g. a year range
-    like "2021-2025") into two separate numbers, instead of letting
-    extract_numbers misread the dash as a negative sign on the second
-    number (2021, then -2025 -- found live via broad_clean_acme's own
-    "over the 2021-2025 window" phrasing). Runs after _strip_dates, which
-    already removes full YYYY-MM-DD dates outright (day/month aren't
-    meaningful claims there); this handles what's left over, like a bare
-    year range in prose. A "-$57" negative-currency claim is unaffected:
-    the dash there is preceded by whitespace, not a digit.
-    """
-    return _DIGIT_RANGE_DASH_RE.sub(" ", text)
-
-
-def _normalize_for_extraction(text: str) -> str:
-    """Composes all eval-only preprocessing steps before extract_numbers."""
-    return _split_digit_ranges(_strip_currency_formatting(_strip_dates(text)))
 
 
 _QUANT_RELEVANT_TOOLS = {"market_agent", "filings_agent", "quant_agent", "full_analysis_pipeline"}

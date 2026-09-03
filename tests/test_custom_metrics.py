@@ -8,14 +8,16 @@ instead, same split as every other ADK-facing wrapper in this project.
 
 from google.adk.evaluation.evaluator import EvalStatus
 
-from argus.tools.claim_matcher import compute_grounding
-
-from argus.eval.custom_metrics import (
-    _normalize_for_extraction,
+from argus.tools.claim_matcher import (
     _split_digit_ranges,
-    _status_for,
     _strip_currency_formatting,
     _strip_dates,
+    compute_grounding,
+)
+from argus.tools.claim_matcher import normalize_for_extraction as _normalize_for_extraction
+
+from argus.eval.custom_metrics import (
+    _status_for,
     contradiction_flagged_correctly,
     detect_company,
     has_quant_relevant_tool,

@@ -451,6 +451,29 @@ Every stage of this project, what was built, and how it was verified live. See t
   `test_is_grounded_rejects_adjacent_year` / `test_compute_grounding_flags_fabricated_number`).
   132 tests total (up from 127), `ruff` / `pyright` / `compileall` clean.
 
+- **Eval-harness normalization drift (2026-09-03)** — ran the full 8-scenario golden evalset live
+  after the two fixes above. 5/8 passed; 3 failed. Two of the failures (`narrow_sentiment`
+  `independent_groundedness` = 0.5; `broad_clean_acme` `independent_groundedness` = 0.8929) were the
+  *eval harness lagging production*: `argus/eval/custom_metrics.py` carried its own private copy of
+  `_strip_dates` / `_strip_currency_formatting` / `_split_digit_ranges` / `_normalize_for_extraction`,
+  written back when those were "eval-only". Those steps were later ported into production
+  `claim_matcher.py`, and today's prose-date + loss-sign fixes were added there too — so the eval
+  copy was two fixes behind and scored the *same drafts* the real Verifier passed at 1.0 as failing.
+  Fixed by deleting the ~75-line private copy and importing `normalize_for_extraction` from
+  `claim_matcher` — the metric stays independent where it matters (the *source* of ground truth:
+  `recompute_quant_metrics` + raw mock data), while number-parsing is now byte-identical to the system
+  under test, permanently, with no second copy to drift. Offline re-score of the saved
+  `evalset_result.json` with the fix: `narrow_sentiment` 0.5 → 1.0, `broad_clean_acme` 0.8929 →
+  0.9259 — both clear the 0.9 bar, taking the evalset from 5/8 to a projected 7/8. The remaining
+  failure, `broad_missing_company_retry`, is the scenario CLAUDE.md already documents as genuinely
+  unreliable — it fails on `response_match_score` (0.12, phrasing) and `contradiction_correctness`
+  (0.0, a *metric*-scoping bug: a "couldn't find data — Acme Corp and Globex are available" decline
+  response makes `detect_company` resolve to Globex, whose planted contradiction the metric then
+  expects the decline to have flagged). Left for a separate pass. 132 tests still green;
+  `test_custom_metrics.py` now imports the three normalization sub-steps straight from
+  `claim_matcher`. A confirming live re-run of the evalset is deferred (real quota cost; the offline
+  re-score is deterministic — same function, same saved responses).
+
 ## Reproducing the results
 
 Both commands below need the eval-only extras, which are deliberately not in the base
