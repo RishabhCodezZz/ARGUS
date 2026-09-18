@@ -14,6 +14,8 @@ from argus.callbacks.guardrails import (
     _ACTION_REQUEST_RE,
     _ACTION_STATEMENT_RE,
     _BUDGET_STATE_KEY,
+    _CODE_BLOCK_RE,
+    _RATING_LABEL_RE,
     _TOOL_CALL_BUDGET,
     _flag_injection,
     enforce_tool_budget,
@@ -83,6 +85,90 @@ def test_strip_action_language_rewrites_matching_response():
     assert result is not None
     assert "[STRIPPED: not investment advice]" in result.content.parts[0].text
     assert "you should buy" not in result.content.parts[0].text.lower()
+
+
+def test_rating_label_matches_slash_combo_after_overall_take():
+    # The exact real phrasing the 1-agent ablation variant produced
+    # live (eval/results/agent_count_ablation_2026-09-18.md), markdown
+    # bold markers and all.
+    assert _RATING_LABEL_RE.search("**Overall Take:** Buy/Hold for conservative compounding.")
+
+
+def test_rating_label_matches_single_word_after_recommendation():
+    assert _RATING_LABEL_RE.search("Recommendation: Strong Buy")
+
+
+def test_rating_label_ignores_hold_outside_a_rating_label():
+    # "hold" alone, in ordinary prose, must not trigger this -- only a
+    # buy/sell/hold word directly after one of the anchored labels does.
+    assert not _RATING_LABEL_RE.search("The company will hold its earnings call in March.")
+
+
+def test_code_block_matches_fenced_block():
+    assert _CODE_BLOCK_RE.search("Sure, here you go:\n```python\ndef f(): pass\n```")
+
+
+def test_code_block_ignores_prose_without_fences():
+    assert not _CODE_BLOCK_RE.search("The company uses Python internally for its reporting stack.")
+
+
+def test_strip_action_language_rewrites_rating_label_response():
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[types.Part(text="**Overall Take:** Buy/Hold for conservative compounding.")],
+        )
+    )
+    result = strip_action_language(callback_context=None, llm_response=response)
+    assert result is not None
+    text = result.content.parts[0].text
+    assert "[STRIPPED: not investment advice]" in text
+    assert "Buy/Hold" not in text
+    # the label itself survives -- only the verdict word(s) are stripped
+    assert "Overall Take" in text
+
+
+def test_strip_action_language_rewrites_code_block_response():
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[types.Part(text="Sure, here's binary search:\n```python\ndef bs(): pass\n```")],
+        )
+    )
+    result = strip_action_language(callback_context=None, llm_response=response)
+    assert result is not None
+    text = result.content.parts[0].text
+    assert "[STRIPPED: outside ARGUS's scope" in text
+    assert "```" not in text
+
+
+def test_strip_action_language_handles_both_issues_in_one_response():
+    # Regression test for a real ADK behavior: the after_model_callback
+    # loop (base_llm_flow.py) stops at the first callback that returns a
+    # non-None override -- it does not chain multiple callbacks' edits.
+    # If the action-language check and the code-block check were two
+    # SEPARATE after_model_callback entries instead of one combined
+    # function, only whichever ran first would ever actually apply.
+    response = LlmResponse(
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    text=(
+                        "You should buy this stock now. Also, here's binary search:\n"
+                        "```python\ndef bs(): pass\n```"
+                    )
+                )
+            ],
+        )
+    )
+    result = strip_action_language(callback_context=None, llm_response=response)
+    assert result is not None
+    text = result.content.parts[0].text
+    assert "[STRIPPED: not investment advice]" in text
+    assert "[STRIPPED: outside ARGUS's scope" in text
+    assert "```" not in text
+    assert "you should buy" not in text.lower()
 
 
 def test_strip_action_language_leaves_clean_response_untouched():

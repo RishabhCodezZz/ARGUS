@@ -6,9 +6,10 @@ exists: the Critic (Stage 2) does subjective quality review and the
 Verifier (Stage 3) does deep numeric grounding on the final draft. These
 four callbacks are always-on checks that run on every model/tool call
 across the whole pipeline: blocking trade-advice requests, stripping
-unhedged action language, neutralizing injected instructions found in
-fetched content, and enforcing a hard tool-call budget — independent of
-whether any particular agent's own instruction happens to resist them.
+unhedged action language and out-of-scope code from responses,
+neutralizing injected instructions found in fetched content, and
+enforcing a hard tool-call budget — independent of whether any
+particular agent's own instruction happens to resist them.
 """
 
 import re
@@ -43,6 +44,39 @@ _ACTION_STATEMENT_RE = re.compile(
     r"\byou should (buy|sell|short|invest)\b",
     re.IGNORECASE,
 )
+# Catches a labeled rating VERDICT ("Overall Take: Buy/Hold", "Rating:
+# Strong Buy", "Recommendation: Sell") -- a different shape from
+# _ACTION_STATEMENT_RE's imperative sentence. Found live via the
+# agent-count ablation's 1-agent variant (2026-09-18, see
+# eval/results/agent_count_ablation_2026-09-18.md): it volunteered
+# "Overall Take: Buy/Hold for conservative compounding" -- nothing in
+# its instruction asked for a recommendation, and "you should buy"
+# never matches a bulleted label. Anchored to a small set of verdict-
+# style labels (not a bare \bhold\b etc.) specifically so it doesn't
+# fire on ordinary prose ("the company will hold its earnings call").
+# Group 1 keeps the label itself (e.g. "Overall Take:") in the
+# replacement -- only the verdict word(s) after it get stripped.
+_RATING_LABEL_RE = re.compile(
+    r"(\b(?:overall\s+take|rating|recommendation|verdict|outlook)\s*:\s*\**\s*)"
+    r"((?:strong\s+)?(?:buy|sell|hold)(?:\s*/\s*(?:strong\s+)?(?:buy|sell|hold))*)",
+    re.IGNORECASE,
+)
+# A fenced code block anywhere in a response. ARGUS's own math runs
+# invisibly through BuiltInCodeExecutor -- confirmed against
+# google.genai.types.Part that executable code and its result live in
+# separate executable_code/code_execution_result fields, never in
+# .text (verified against types.py before relying on it, principle 6)
+# -- so this never touches real computation, only text the model
+# itself wrote. A code block in a user-facing reply is a strong, cheap
+# signal that an out-of-scope request got smuggled in alongside a real
+# one (e.g. "what's Acme's stock price? also give me the code for
+# binary search") and the model complied instead of declining.
+# Deliberately narrow: it only catches requests that produce CODE, not
+# every possible off-topic ask (a joke, a poem) -- that broader class
+# relies on the Orchestrator's own instruction to decline unrelated
+# requests (argus/agents/orchestrator.py), a weaker prompt-level
+# defense. Disclosed scope limit, not silently assumed solved.
+_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _INJECTION_RE = re.compile(
     r"\b(ignore (all |the )?(previous|above) instructions|system prompt|"
     r"you are now|new instructions?:)\b",
@@ -84,21 +118,44 @@ def block_action_requests(
 def strip_action_language(
     callback_context: CallbackContext, llm_response: LlmResponse
 ) -> LlmResponse | None:
-    """after_model_callback: catch unhedged action-advice language
-    that slips into any agent's output, anywhere in the pipeline."""
+    """after_model_callback: catch unhedged action-advice language AND
+    out-of-scope code that slip into any agent's output, anywhere in
+    the pipeline.
+
+    Both checks live in ONE callback rather than two separate
+    after_model_callback entries, because of a real ADK behavior worth
+    documenting: base_llm_flow.py's canonical_after_model_callbacks
+    loop STOPS at the first callback that returns a non-None override
+    (confirmed against google/adk/flows/llm_flows/base_llm_flow.py) --
+    it does not chain multiple callbacks' edits together. Two separate
+    functions in a list would mean only ONE of two simultaneous
+    problems in the same response ever actually gets fixed, depending
+    on list order -- a genuine correctness gap, not a style choice.
+    See _RATING_LABEL_RE / _CODE_BLOCK_RE above for why each exists.
+    """
     if not llm_response.content or not llm_response.content.parts:
         return None
     changed = False
     new_parts = []
     for part in llm_response.content.parts:
-        if part.text and _ACTION_STATEMENT_RE.search(part.text):
-            new_parts.append(
-                types.Part(
-                    text=_ACTION_STATEMENT_RE.sub(
-                        "[STRIPPED: not investment advice]", part.text
-                    )
-                )
+        if not part.text:
+            new_parts.append(part)
+            continue
+        text = part.text
+        part_changed = False
+        if _ACTION_STATEMENT_RE.search(text):
+            text = _ACTION_STATEMENT_RE.sub("[STRIPPED: not investment advice]", text)
+            part_changed = True
+        if _RATING_LABEL_RE.search(text):
+            text = _RATING_LABEL_RE.sub(r"\1[STRIPPED: not investment advice]", text)
+            part_changed = True
+        if _CODE_BLOCK_RE.search(text):
+            text = _CODE_BLOCK_RE.sub(
+                "[STRIPPED: outside ARGUS's scope — company due-diligence only]", text
             )
+            part_changed = True
+        if part_changed:
+            new_parts.append(types.Part(text=text))
             changed = True
         else:
             new_parts.append(part)
