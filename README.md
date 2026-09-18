@@ -113,6 +113,28 @@ So what code execution actually buys is **analytical depth underneath a still-gr
 accuracy. The critic loop, separately, showed a small real benefit exactly where you'd want one — on
 the harder, messier scenario, not the easy one.
 
+### Agent-count ablation — was 8 agents the right number?
+
+A 2026 paper (arXiv 2604.02460, budget-matched across Qwen3/DeepSeek-R1-Distill/Gemini 2.5) found
+single agents often match or beat multi-agent teams at equal token budget. The study above tests
+removing *components* from the fixed 8-agent shape; this one tests agent *count* — the specific,
+predictable question the paper raises about any multi-agent system. Full write-up in
+[`eval/results/`](eval/results/agent_count_ablation_2026-09-18.md).
+
+| Variant | Acme (clean) | Globex (hard) | Output tokens (avg) |
+|---|---|---|---|
+| **8-agent baseline** | 0.9310 | 1.0000 | 4166 |
+| **3-agent** (gather, compute+draft, critique+revise merged) | 0.9259 | 0.9474 | 3794 |
+| **1-agent** (everything in one turn, seeded not tool-driven) | 1.0000 | 0.9394 | **1912** |
+
+**The 1-agent variant used less than half the baseline's output tokens on both scenarios** — and
+scored the best groundedness of any variant on Acme Corp while doing it. Tracing every "ungrounded"
+flag to its source (markdown section-header numbers coincidentally extracted as claims; two
+arithmetically-correct derived percentages the scorer's ground-truth set doesn't cover) leaves **zero
+genuinely fabricated numbers across any of the six runs**, including the cheapest one. A real, separate
+finding this run surfaced: the 1-agent/Acme response ended with a "Buy/Hold" label the existing
+action-language guardrail's regex doesn't catch — disclosed, not fixed, in the same write-up.
+
 ## See it catch something
 
 **Cross-source contradiction — quoted verbatim from
