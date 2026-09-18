@@ -7,7 +7,7 @@ treatment as argus/eval/ablation.py's own build_baseline/run_variant.
 
 import json
 
-from argus.eval.agent_count_ablation import score_groundedness, split_combined_evidence
+from argus.eval.agent_count_ablation import build_three_agent, score_groundedness, split_combined_evidence
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 
 
@@ -52,3 +52,25 @@ def test_score_groundedness_vacuous_perfect_score_when_no_numbers_stated():
     # a prose-only response with no numeric claims scores 1.0 by design.
     result = score_groundedness("Acme Corp is a company in the mock dataset.", "Acme Corp")
     assert result["groundedness_ratio"] == 1.0
+
+
+def test_build_three_agent_has_five_stages_in_order():
+    agent = build_three_agent()
+    names = [sub.name for sub in agent.sub_agents]
+    assert names == [
+        "ablation3_gather_agent",
+        "ablation3_split_evidence",
+        "reconciliation_agent",
+        "ablation3_compute_and_draft_agent",
+        "ablation3_critique_and_revise_agent",
+    ]
+
+
+def test_build_three_agent_returns_a_fresh_tree_each_call():
+    # Each sub_agent can only have one parent (ADK constraint) -- calling
+    # build_three_agent() twice must not raise, confirming every reused
+    # singleton (reconciliation_agent) is genuinely cloned, not shared.
+    first = build_three_agent()
+    second = build_three_agent()
+    assert first is not second
+    assert first.sub_agents[2] is not second.sub_agents[2]

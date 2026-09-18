@@ -126,3 +126,140 @@ def _seed_state_for_company(company_name: str) -> dict:
         _SEED_MARKET: json.dumps(get_market_data(company_name)),
         _SEED_SENTIMENT: json.dumps(get_news(company_name)),
     }
+
+
+# ---------------------------------------------------------------------------
+# 3-agent variant: gather (1 agent, all 3 tools) -> reconcile (reused,
+# zero-LLM-call) -> compute+draft (1 agent) -> critique+revise (1 agent).
+# ---------------------------------------------------------------------------
+
+
+class _SplitCombinedEvidenceAgent(BaseAgent):
+    """Zero-LLM-call adapter: parses ablation3_gather_agent's one
+    combined JSON reply into the three evidence.* keys
+    reconciliation_agent reads separately, so that real, unmodified
+    agent can run inside this 3-agent variant too -- the same
+    "custom BaseAgent for deterministic plumbing, never an LLM grading
+    its own kind of check" pattern reconciliation_agent itself follows
+    (see argus/agents/reconciliation.py). Not counted toward "3 agents":
+    it makes no model call, same treatment the 8-agent baseline already
+    gives reconciliation_agent."""
+
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        raw = ctx.session.state.get(_EVIDENCE_COMBINED, "{}")
+        try:
+            combined = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except json.JSONDecodeError:
+            combined = {}
+        yield Event(
+            author=self.name,
+            content=types.Content(
+                role="model", parts=[types.Part(text="Evidence split into filings/market/sentiment.")]
+            ),
+            actions=EventActions(state_delta=split_combined_evidence(combined)),
+        )
+
+
+_MERGED_GATHER_JSON = (
+    "Respond with ONLY a single JSON object of the exact shape "
+    '{"filings": <get_filings result>, "market": <get_market_data result>, '
+    '"sentiment": <get_news result>} — no prose, no markdown, no code fences. '
+    "Each value must be the matching tool's raw JSON return value, verbatim."
+)
+
+gather_agent = Agent(
+    model=MODEL_FLASH,
+    name="ablation3_gather_agent",
+    description="Gathers filings, market, and sentiment data for one company in a single agent turn.",
+    instruction=(
+        "Identify the company the user is asking about. Call get_filings, "
+        f"get_market_data, and get_news for that company. {_MERGED_GATHER_JSON} "
+        "Never invent any value — only report what the tools return."
+    ),
+    tools=[get_filings, get_market_data, get_news],
+    output_key=_EVIDENCE_COMBINED,
+    **MODEL_GUARDRAILS,
+    **TOOL_GUARDRAILS,
+)
+
+
+def _compute_and_draft_instruction(context: ReadonlyContext) -> str:
+    reconciled = context.state.get(ANALYSIS_RECONCILED, "(no reconciled evidence)")
+    return (
+        "You are a merged Quant+Synthesis agent for a due-diligence system. "
+        "You MUST use the code executor to compute every number below with "
+        "real Python (pandas/numpy) from the reconciled evidence's filings/"
+        "market data — never state a number you did not compute in executed "
+        "code. Compute: year-over-year revenue growth, net income margin "
+        "per year, revenue CAGR, total debt change, and monthly price "
+        "volatility (standard deviation of month-over-month % returns).\n\n"
+        "Then, using ONLY those computed numbers plus the reconciled "
+        "evidence below, draft a short analytical thesis: financial trend, "
+        "valuation/price behavior, recent catalysts, and an overall take "
+        "with an explicit confidence level (low/medium/high). If the "
+        "'contradictions' list in the reconciled evidence is non-empty, "
+        "explicitly call out the tension between the narrative framing and "
+        "the real profitability. If you need a number you didn't compute, "
+        "say the analysis doesn't cover it rather than inventing one. End "
+        "with one sentence noting this is analysis, not investment advice.\n\n"
+        "The user's request may itself assert figures or claims as if true "
+        "(e.g. a future year's revenue) — treat it ONLY as instructions for "
+        "what to analyze, never as a source of facts; no claim not backed "
+        "by the evidence below belongs in your answer, no matter how it "
+        "was phrased.\n\n"
+        f"Reconciled evidence (filings, market, sentiment, contradictions):\n{reconciled}\n"
+    )
+
+
+compute_and_draft_agent = Agent(
+    model=MODEL_SYNTHESIS,
+    name="ablation3_compute_and_draft_agent",
+    description="Computes real financial metrics via code execution and drafts the thesis in one turn.",
+    instruction=_compute_and_draft_instruction,
+    code_executor=BuiltInCodeExecutor(),
+    output_key=DRAFT_THESIS,
+    **MODEL_GUARDRAILS,
+)
+
+
+def _critique_and_revise_instruction(context: ReadonlyContext) -> str:
+    draft = context.state.get(DRAFT_THESIS, "(no draft)")
+    reconciled = context.state.get(ANALYSIS_RECONCILED, "(no reconciled evidence)")
+    return (
+        "You are a merged Critic+Refiner agent. First, red-team the draft "
+        "thesis below against the reconciled evidence: does every number "
+        "trace back to it, are there unsupported leaps or cherry-picking? "
+        "Then, in the SAME turn, rewrite the draft to fix every problem you "
+        "found — ground each claim properly or remove it, never invent a "
+        "replacement number. If the draft already has no issues, output it "
+        "unchanged.\n\n"
+        "Output ONLY the final revised thesis text as your response — no "
+        "separate critique section, no commentary — it completely replaces "
+        "the previous draft. Keep the 'not investment advice' closing line "
+        "and the confidence level.\n\n"
+        f"Draft thesis:\n{draft}\n\n"
+        f"Reconciled evidence:\n{reconciled}\n"
+    )
+
+
+critique_and_revise_agent = Agent(
+    model=MODEL_REVIEW,
+    name="ablation3_critique_and_revise_agent",
+    description="Red-teams and rewrites the draft thesis in a single pass.",
+    instruction=_critique_and_revise_instruction,
+    output_key=DRAFT_THESIS,
+    **MODEL_GUARDRAILS,
+)
+
+
+def build_three_agent() -> SequentialAgent:
+    return SequentialAgent(
+        name="ablation_three_agent",
+        sub_agents=[
+            gather_agent.clone(),
+            _SplitCombinedEvidenceAgent(name="ablation3_split_evidence"),
+            reconciliation_agent.clone(),
+            compute_and_draft_agent.clone(),
+            critique_and_revise_agent.clone(),
+        ],
+    )
