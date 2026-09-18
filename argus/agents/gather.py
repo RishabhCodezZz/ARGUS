@@ -40,9 +40,15 @@ from argus.state_keys import (
 from argus.tools.mock_data import get_filings, get_market_data, get_news
 
 _VERBATIM_JSON = (
-    "Respond with ONLY the raw JSON object the tool returned — no prose, "
-    "no markdown, no code fences, no commentary before or after. Your "
-    "entire reply must be exactly that JSON and nothing else."
+    "Call your tool exactly ONCE, even if it returns an error whose "
+    "suggested_name field looks like an easy fix — do NOT call the tool "
+    "again yourself with a different name. Retrying with a corrected name "
+    "is the Orchestrator's decision to make and disclose to the user, not "
+    "yours; a silent retry here means the substitution never gets "
+    "disclosed at all. Respond with ONLY the raw JSON object your one "
+    "tool call returned — no prose, no markdown, no code fences, no "
+    "commentary before or after. Your entire reply must be exactly that "
+    "JSON and nothing else."
 )
 
 
