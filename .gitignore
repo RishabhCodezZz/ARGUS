@@ -16,7 +16,6 @@ __pycache__/
 
 # Eval-harness scratch state (resumable ablation checkpoint, machine-local)
 .ablation_checkpoint.json
-.agent_count_ablation_checkpoint.json
 
 # Local-only implementation plans (superpowers:writing-plans output) --
 # working docs for this machine, same treatment as CLAUDE.md/PLAN.md below.

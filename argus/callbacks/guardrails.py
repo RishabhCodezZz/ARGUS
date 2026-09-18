@@ -46,16 +46,15 @@ _ACTION_STATEMENT_RE = re.compile(
 )
 # Catches a labeled rating VERDICT ("Overall Take: Buy/Hold", "Rating:
 # Strong Buy", "Recommendation: Sell") -- a different shape from
-# _ACTION_STATEMENT_RE's imperative sentence. Found live via the
-# agent-count ablation's 1-agent variant (2026-09-18, see
-# eval/results/agent_count_ablation_2026-09-18.md): it volunteered
-# "Overall Take: Buy/Hold for conservative compounding" -- nothing in
-# its instruction asked for a recommendation, and "you should buy"
-# never matches a bulleted label. Anchored to a small set of verdict-
-# style labels (not a bare \bhold\b etc.) specifically so it doesn't
-# fire on ordinary prose ("the company will hold its earnings call").
-# Group 1 keeps the label itself (e.g. "Overall Take:") in the
-# replacement -- only the verdict word(s) after it get stripped.
+# _ACTION_STATEMENT_RE's imperative sentence. Found live (2026-09-18)
+# during an exploratory test that volunteered "Overall Take: Buy/Hold
+# for conservative compounding" -- nothing in the instruction asked
+# for a recommendation, and "you should buy" never matches a bulleted
+# label. Anchored to a small set of verdict-style labels (not a bare
+# \bhold\b etc.) specifically so it doesn't fire on ordinary prose
+# ("the company will hold its earnings call"). Group 1 keeps the label
+# itself (e.g. "Overall Take:") in the replacement -- only the verdict
+# word(s) after it get stripped.
 _RATING_LABEL_RE = re.compile(
     r"(\b(?:overall\s+take|rating|recommendation|verdict|outlook)\s*:\s*\**\s*)"
     r"((?:strong\s+)?(?:buy|sell|hold)(?:\s*/\s*(?:strong\s+)?(?:buy|sell|hold))*)",

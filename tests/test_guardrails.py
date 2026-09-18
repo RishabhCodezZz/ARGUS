@@ -88,9 +88,8 @@ def test_strip_action_language_rewrites_matching_response():
 
 
 def test_rating_label_matches_slash_combo_after_overall_take():
-    # The exact real phrasing the 1-agent ablation variant produced
-    # live (eval/results/agent_count_ablation_2026-09-18.md), markdown
-    # bold markers and all.
+    # The exact real phrasing an exploratory live test produced
+    # (2026-09-18), markdown bold markers and all.
     assert _RATING_LABEL_RE.search("**Overall Take:** Buy/Hold for conservative compounding.")
 
 

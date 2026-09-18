@@ -55,7 +55,6 @@ from argus.agents.reconciliation import reconciliation_agent
 from argus.agents.refiner import refiner_agent
 from argus.agents.synthesis import synthesis_agent
 from argus.agents.verifier import verifier_agent
-from argus.eval.token_accounting import sum_output_tokens
 from argus.state_keys import DRAFT_THESIS, META_GROUNDEDNESS
 
 _SCENARIOS = [
@@ -113,11 +112,11 @@ def build_no_code_exec() -> SequentialAgent:
     )
 
 
-async def _run_once(agent, prompt: str, app_name: str, state: dict | None = None) -> dict:
+async def _run_once(agent, prompt: str, app_name: str) -> dict:
     session_service = InMemorySessionService()
     artifact_service = InMemoryArtifactService()
     user_id = "ablation_user"
-    session = await session_service.create_session(app_name=app_name, user_id=user_id, state=state)
+    session = await session_service.create_session(app_name=app_name, user_id=user_id)
     runner = Runner(
         agent=agent,
         app_name=app_name,
@@ -125,9 +124,8 @@ async def _run_once(agent, prompt: str, app_name: str, state: dict | None = None
         artifact_service=artifact_service,
     )
     content = types.Content(role="user", parts=[types.Part(text=prompt)])
-    events = []
-    async for event in runner.run_async(user_id=user_id, session_id=session.id, new_message=content):
-        events.append(event)
+    async for _event in runner.run_async(user_id=user_id, session_id=session.id, new_message=content):
+        pass
     final_session = await session_service.get_session(app_name=app_name, user_id=user_id, session_id=session.id)
     if final_session is None:
         # get_session is typed to return None on a lookup miss -- caught
@@ -138,21 +136,13 @@ async def _run_once(agent, prompt: str, app_name: str, state: dict | None = None
     return {
         "thesis": final_session.state.get(DRAFT_THESIS, ""),
         "groundedness": final_session.state.get(META_GROUNDEDNESS),
-        "output_tokens": sum_output_tokens(events),
     }
 
 
-async def run_variant(
-    build_agent, prompt: str, app_name: str, max_attempts: int = 4, state: dict | None = None
-) -> dict:
+async def run_variant(build_agent, prompt: str, app_name: str, max_attempts: int = 4) -> dict:
     """Runs one pipeline variant on one prompt via a real ADK Runner, and
     reads back the final thesis text + the Verifier's own groundedness
     score from session state.
-
-    `state` seeds initial session.state (e.g. mock data pasted directly
-    for a variant that can't use FunctionTools alongside code execution
-    -- see argus/eval/agent_count_ablation.py's 1-agent variant). Default
-    None matches every existing caller's behavior exactly.
 
     Retries on RESOURCE_EXHAUSTED (429): unlike the `adk eval` CLI (which
     has its own retry wrapping observed to ride out the free-tier 15/min
@@ -166,7 +156,7 @@ async def run_variant(
     last_error = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return await _run_once(build_agent(), prompt, app_name, state=state)
+            return await _run_once(build_agent(), prompt, app_name)
         except Exception as exc:  # noqa: BLE001 -- deliberately broad: any failure gets one retry
             last_error = exc
             wait_s = 35 * attempt

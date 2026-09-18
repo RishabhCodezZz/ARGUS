@@ -21,7 +21,6 @@ ignore = ["E501"]
 # those modules read env vars (GOOGLE_API_KEY) at import time -- moving
 # the imports to the top would break that ordering on purpose.
 "argus/eval/ablation.py" = ["E402"]
-"argus/eval/agent_count_ablation.py" = ["E402"]
 
 [tool.pyright]
 include = ["argus"]

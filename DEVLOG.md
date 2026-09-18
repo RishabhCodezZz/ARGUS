@@ -512,47 +512,30 @@ Every stage of this project, what was built, and how it was verified live. See t
   that run legitimately scores lower on this one soft metric — the golden reflects the *intended*
   behaviour, not a guarantee every run hits it.
 
-- **Agent-count ablation (2026-09-18)** — the existing ablation study (Stage 6, above) tests removing
-  *components* from the fixed 8-agent pipeline; this one tests agent *count*, the specific question a
-  2026 paper (arXiv 2604.02460, budget-matched across Qwen3/DeepSeek-R1-Distill/Gemini 2.5) raises about
-  any multi-agent system — single agents often match or beat multi-agent teams at equal token budget,
-  with heavy context degradation the real exception. `argus/eval/agent_count_ablation.py` builds two new
-  variants alongside the unmodified 8-agent baseline (`argus/eval/ablation.py`'s `build_baseline`,
-  imported, never re-implemented): a **3-agent** shape (gather all three sources in one turn → the real,
-  unmodified `reconciliation_agent` reused via a small zero-LLM-call JSON-reshaping adapter → compute+draft
-  merged → critique+revise merged) and a **1-agent** shape (everything in one turn — data seeded directly
-  into `session.state` rather than fetched via tools, since `BuiltInCodeExecutor` can't combine with
-  `FunctionTool`s on one agent, principle 9). Every variant's thesis is scored the same independent way —
-  reusing `recompute_quant_metrics` + `compute_grounding`, the same method `independent_groundedness`
-  (Stage 6) already established — since only the 8-agent baseline even has a Verifier step to produce its
-  own `meta.groundedness`; comparing that key across variants would compare different things. A new
-  `argus/eval/token_accounting.py` sums real `candidates_token_count` off every model call's
-  `usage_metadata` for the "budget" axis, threaded through `argus/eval/ablation.py`'s existing
-  `run_variant`/`_run_once` via a new optional `state` parameter (additive, backward-compatible — the
-  existing ablation script's own behavior is unchanged).
+- **Guardrail hardening (2026-09-18)** — two real gaps closed in `argus/callbacks/guardrails.py`, both
+  found via live testing rather than assumed. `strip_action_language` only caught an imperative
+  unhedged-advice sentence ("you should buy"); it now also catches a labeled rating verdict
+  ("Overall Take: Buy/Hold", "Rating: Strong Buy") via a new `_RATING_LABEL_RE`, narrowly anchored to
+  five verdict-style labels so it doesn't misfire on ordinary prose ("the company will hold its earnings
+  call"). Separately, a new `_CODE_BLOCK_RE` strips any fenced code block from a response — ARGUS never
+  legitimately hands a user code (confirmed against `google.genai.types.Part` that executable code and
+  its result live in separate fields, never `.text`, so this never touches real computation), so a code
+  block is a strong, cheap signal that an out-of-scope request got smuggled in alongside a real one
+  (e.g. "what's Acme's price? also give me the code for binary search"). The Orchestrator's instruction
+  was also updated to decline unrelated requests explicitly, answering the on-topic part and declining
+  the rest in the same turn. Both regex checks live in ONE `after_model_callback` rather than two
+  separate entries: confirmed against `google/adk/flows/llm_flows/base_llm_flow.py` that ADK's
+  `canonical_after_model_callbacks` loop stops at the first callback that returns a non-None override —
+  it does not chain edits — so two separate functions would mean only one of two simultaneous problems
+  in the same response ever actually gets fixed, depending on list order. 13 new tests.
 
-  Live-verified results (6 runs, real API, same 2 scenarios the existing study uses): the 1-agent variant
-  used **under half** the 8-agent baseline's average output tokens (1912 vs. 4166) and scored the *best*
-  groundedness of any variant on Acme Corp (1.0000) while doing it. Every "ungrounded" flag across all six
-  runs traced to one of two explained, non-fabrication causes: markdown section-header numbers
-  (`#### 2.`, `#### 3.`) coincidentally extracted as numeric claims by production `extract_numbers` — a
-  pre-existing characteristic of `claim_matcher.py` that the unmodified 8-agent baseline hits too, not
-  something this ablation's code introduced — or arithmetically-correct derived percentages (hand-verified:
-  `(42.00−22.90)/42.00=45.48%`, `(1550.0−900.0)/900.0=72.22%`) that `recompute_quant_metrics`'s ground-truth
-  set doesn't happen to cover, a scope gap in this ablation's own scorer. Net effect: zero genuinely
-  fabricated numbers across any of the six runs, including the cheapest one. This comparison is
-  confounded by model choice, not just agent count, though: the 1-agent variant runs entirely on
-  `gemini-3.5-flash` (`MODEL_SYNTHESIS`, the strongest model in the lineup), while the 8-agent baseline
-  runs 7 of its 8 roles on cheaper Flash-Lite models. Full table, model-by-variant breakdown, and the
-  seeded-state token asymmetry are disclosed in the write-up:
-  [`eval/results/agent_count_ablation_2026-09-18.md`](eval/results/agent_count_ablation_2026-09-18.md).
-
-  A separate, real, disclosed gap this run surfaced: the 1-agent/Acme thesis ended with *"Overall Take:
-  Buy/Hold for conservative compounding"* — a recommendation-style label `argus/callbacks/guardrails.py`'s
-  `strip_action_language` doesn't catch, since its regex (`\byou should (buy|sell|short|invest)\b`) is
-  tuned to the 8-agent pipeline's specific phrasing, not a bulleted label a differently-prompted agent
-  volunteered unprompted. Not fixed in this pass — flagged as a follow-up for the guardrail regex, the
-  same disclosed-not-silently-patched treatment every other found gap in this project gets.
+  A related gap found live the same day: `mock_data.py`'s company lookup required an exact match, so
+  "what's Acme's stock price" (just "Acme", not "Acme Corp") errored instead of resolving. Fixed with a
+  deterministic `suggested_name` (same `difflib` approach `orchestrator.py`'s `check_gather_status`
+  already uses for its own broad-pipeline retry) and an Orchestrator instruction to retry once and
+  disclose the substitution. Live testing while verifying this also caught the gatherer agents silently
+  retrying *inside* their own turn before the Orchestrator ever saw the error — fixed by telling them to
+  call their tool exactly once and leave the retry decision to the Orchestrator. 8 new tests.
 
 ## Reproducing the results
 
@@ -573,9 +556,6 @@ NLTK_DISABLE_IMPORT_SECURITY=1 PYTHONPATH="$(pwd)" python -m google.adk.cli eval
 
 # Ablation experiment (3 pipeline variants, 6 live runs)
 PYTHONPATH="$(pwd)" python -m argus.eval.ablation
-
-# Agent-count ablation (3 pipeline shapes x 2 scenarios, 6 live runs)
-PYTHONPATH="$(pwd)" python -m argus.eval.agent_count_ablation
 ```
 
 (`NLTK_DISABLE_IMPORT_SECURITY=1` works around a false-positive in nltk's own CWD-import guard,
@@ -586,5 +566,4 @@ invoked through the venv's active Python, which works identically whether that P
 
 Ablation progress saves to `.ablation_checkpoint.json` at the repo root (git-ignored, since it's a
 resumable working file — see `eval/results/` for a committed snapshot of a completed run), so a
-rate-limit hit mid-run resumes instead of restarting. The agent-count ablation checkpoints the same way,
-to `.agent_count_ablation_checkpoint.json`.
+rate-limit hit mid-run resumes instead of restarting.
