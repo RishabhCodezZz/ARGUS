@@ -41,12 +41,14 @@ computed output.
 ## What this shows
 
 **Token cost drops sharply as agent count drops, with no increase in real fabrication once the
-"ungrounded" flags are traced to their actual source.** The 1-agent variant used **less than half** the
-baseline's output tokens on both scenarios, and it scored the *best* groundedness of all three variants
-on Acme Corp (1.0000, tied with itself being the only perfect score there) while doing so. That is the
-finding I'd have bet against going in — the instinct that "fewer agents means the model juggles more at
-once and starts slipping" — and it's the more interesting result precisely because it's not what a naive
-prior would predict.
+"ungrounded" flags are traced to their actual source.** The 1-agent variant used **under half the
+baseline's average output tokens** (1912 vs. 4166) — per scenario, that's 53.6% of baseline on Acme
+Corp (2075 vs. 3872) and 39.2% on Globex (1749 vs. 4460), so "less than half" holds in aggregate and on
+Globex specifically, not on every individual scenario — and it scored the *best* groundedness of all
+three variants on Acme Corp (1.0000, the only run of the six to reach a perfect score there) while doing
+so. That is the finding I'd have bet against going in — the instinct that "fewer agents means the model
+juggles more at once and starts slipping" — and it's the more interesting result precisely because it's
+not what a naive prior would predict.
 
 **Every "ungrounded" flag traces to one of two explained, non-fabrication causes — not a made-up number:**
 

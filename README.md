@@ -127,8 +127,9 @@ predictable question the paper raises about any multi-agent system. Full write-u
 | **3-agent** (gather, compute+draft, critique+revise merged) | 0.9259 | 0.9474 | 3794 |
 | **1-agent** (everything in one turn, seeded not tool-driven) | 1.0000 | 0.9394 | **1912** |
 
-**The 1-agent variant used less than half the baseline's output tokens on both scenarios** — and
-scored the best groundedness of any variant on Acme Corp while doing it. Tracing every "ungrounded"
+**The 1-agent variant used under half the baseline's average output tokens** (1912 vs. 4166 — 53.6%
+of baseline on Acme, 39.2% on Globex) — and scored the best groundedness of any variant on Acme Corp
+while doing it. Tracing every "ungrounded"
 flag to its source (markdown section-header numbers coincidentally extracted as claims; two
 arithmetically-correct derived percentages the scorer's ground-truth set doesn't cover) leaves **zero
 genuinely fabricated numbers across any of the six runs**, including the cheapest one. A real, separate
