@@ -7,7 +7,15 @@ treatment as argus/eval/ablation.py's own build_baseline/run_variant.
 
 import json
 
-from argus.eval.agent_count_ablation import build_three_agent, score_groundedness, split_combined_evidence
+from argus.eval.agent_count_ablation import (
+    _SEED_FILINGS,
+    _SEED_MARKET,
+    _SEED_SENTIMENT,
+    build_one_agent,
+    build_three_agent,
+    score_groundedness,
+    split_combined_evidence,
+)
 from argus.state_keys import EVIDENCE_FILINGS, EVIDENCE_MARKET, EVIDENCE_SENTIMENT
 
 
@@ -74,3 +82,25 @@ def test_build_three_agent_returns_a_fresh_tree_each_call():
     second = build_three_agent()
     assert first is not second
     assert first.sub_agents[2] is not second.sub_agents[2]
+
+
+def test_build_one_agent_has_code_executor_and_no_function_tools():
+    agent = build_one_agent()
+    assert agent.code_executor is not None
+    assert not agent.tools
+
+
+def test_build_one_agent_instruction_embeds_seeded_company_data():
+    from types import SimpleNamespace
+
+    agent = build_one_agent()
+    seeded_state = {
+        _SEED_FILINGS: '{"company": "Acme Corp"}',
+        _SEED_MARKET: '{"ticker": "ACME"}',
+        _SEED_SENTIMENT: '{"headlines": []}',
+    }
+    context = SimpleNamespace(state=seeded_state)
+    instruction = agent.instruction(context)
+    assert '{"company": "Acme Corp"}' in instruction
+    assert '{"ticker": "ACME"}' in instruction
+    assert '{"headlines": []}' in instruction
