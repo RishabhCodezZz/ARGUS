@@ -540,7 +540,11 @@ Every stage of this project, what was built, and how it was verified live. See t
   something this ablation's code introduced — or arithmetically-correct derived percentages (hand-verified:
   `(42.00−22.90)/42.00=45.48%`, `(1550.0−900.0)/900.0=72.22%`) that `recompute_quant_metrics`'s ground-truth
   set doesn't happen to cover, a scope gap in this ablation's own scorer. Net effect: zero genuinely
-  fabricated numbers across any of the six runs, including the cheapest one. Full table and analysis:
+  fabricated numbers across any of the six runs, including the cheapest one. This comparison is
+  confounded by model choice, not just agent count, though: the 1-agent variant runs entirely on
+  `gemini-3.5-flash` (`MODEL_SYNTHESIS`, the strongest model in the lineup), while the 8-agent baseline
+  runs 7 of its 8 roles on cheaper Flash-Lite models. Full table, model-by-variant breakdown, and the
+  seeded-state token asymmetry are disclosed in the write-up:
   [`eval/results/agent_count_ablation_2026-09-18.md`](eval/results/agent_count_ablation_2026-09-18.md).
 
   A separate, real, disclosed gap this run surfaced: the 1-agent/Acme thesis ended with *"Overall Take:
@@ -569,6 +573,9 @@ NLTK_DISABLE_IMPORT_SECURITY=1 PYTHONPATH="$(pwd)" python -m google.adk.cli eval
 
 # Ablation experiment (3 pipeline variants, 6 live runs)
 PYTHONPATH="$(pwd)" python -m argus.eval.ablation
+
+# Agent-count ablation (3 pipeline shapes x 2 scenarios, 6 live runs)
+PYTHONPATH="$(pwd)" python -m argus.eval.agent_count_ablation
 ```
 
 (`NLTK_DISABLE_IMPORT_SECURITY=1` works around a false-positive in nltk's own CWD-import guard,
@@ -579,4 +586,5 @@ invoked through the venv's active Python, which works identically whether that P
 
 Ablation progress saves to `.ablation_checkpoint.json` at the repo root (git-ignored, since it's a
 resumable working file — see `eval/results/` for a committed snapshot of a completed run), so a
-rate-limit hit mid-run resumes instead of restarting.
+rate-limit hit mid-run resumes instead of restarting. The agent-count ablation checkpoints the same way,
+to `.agent_count_ablation_checkpoint.json`.

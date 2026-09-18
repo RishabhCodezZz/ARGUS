@@ -136,6 +136,10 @@ genuinely fabricated numbers across any of the six runs**, including the cheapes
 finding this run surfaced: the 1-agent/Acme response ended with a "Buy/Hold" label the existing
 action-language guardrail's regex doesn't catch — disclosed, not fixed, in the same write-up.
 
+This comparison is also confounded by model choice, not just agent count: the 1-agent variant runs
+entirely on `gemini-3.5-flash`, the strongest model in the lineup, while the 8-agent baseline runs 7 of
+its 8 roles on cheaper Flash-Lite models — full model-by-variant breakdown in the write-up linked above.
+
 ## See it catch something
 
 **Cross-source contradiction — quoted verbatim from

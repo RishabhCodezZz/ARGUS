@@ -10,7 +10,7 @@ agents match or beat multi-agent teams at equal token budget in nearly
 all conditions, with heavy context degradation the real exception --
 exactly ARGUS's regime) raises about any multi-agent system, unanswered
 here until now. Full design rationale:
-docs/superpowers/plans/2026-09-18-agent-count-budget-ablation-SPEC.md
+eval/results/agent_count_ablation_2026-09-18.md
 
 Builds 2 new pipeline variants (3-agent, 1-agent) alongside the
 existing 8-agent baseline (imported unchanged from
@@ -147,10 +147,17 @@ class _SplitCombinedEvidenceAgent(BaseAgent):
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         raw = ctx.session.state.get(_EVIDENCE_COMBINED, "{}")
-        try:
-            combined = json.loads(raw) if isinstance(raw, str) else (raw or {})
-        except json.JSONDecodeError:
-            combined = {}
+        if isinstance(raw, dict):
+            combined = raw
+        else:
+            try:
+                combined = json.loads(raw) if raw else {}
+            except (json.JSONDecodeError, TypeError):
+                print(
+                    f"[agent_count_ablation] WARNING: failed to parse combined evidence JSON: {raw!r}",
+                    file=sys.stderr,
+                )
+                combined = {}
         yield Event(
             author=self.name,
             content=types.Content(

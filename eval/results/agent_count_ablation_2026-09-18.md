@@ -25,6 +25,32 @@ comparing different things. Instead every thesis is scored by `score_groundednes
 established in `argus/eval/custom_metrics.py` — against real mock data, never trusting any agent's
 computed output.
 
+**Model-capability confound, stated plainly.** The three variants do not run on identical models, and
+this is not controlled for anywhere below. The 1-agent variant (`build_one_agent`) runs 100% of its
+work on `MODEL_SYNTHESIS` = `gemini-3.5-flash`, the strongest model in this project's lineup
+(`argus/config.py`). The 8-agent baseline runs its three gatherers and `quant_agent` on `MODEL_FLASH` =
+`gemini-3.5-flash-lite`, and `critic_agent`/`refiner_agent`/`verifier_agent` on `MODEL_REVIEW` =
+`gemini-3.1-flash-lite` — only `synthesis_agent` (1 of 8 roles) runs on the stronger flash model. The
+3-agent variant sits in between: `gather_agent` on `MODEL_FLASH`, `compute_and_draft_agent` on
+`MODEL_SYNTHESIS`, `critique_and_revise_agent` on `MODEL_REVIEW`. So "the 1-agent variant scored the
+best groundedness of any variant on Acme Corp" is confounded with "the 1-agent arm did every step on
+the strongest available model, while the baseline did only 1 of 8 roles on it." A defensible design
+choice — a lone agent doing everything needs the best model available — but not something the
+token-cost/quality comparison below controls for.
+
+**Seeded-state token-budget asymmetry.** Part of the 1-agent variant's token-cost advantage is
+structural, not purely a measure of analytical efficiency. It reads its evidence from pre-seeded
+`session.state` instead of calling `FunctionTool`s (a real ADK constraint — `BuiltInCodeExecutor` can't
+combine with `FunctionTool`s on one agent), so unlike the baseline's three gatherers and the 3-agent
+variant's `gather_agent`, it never has to emit its tool results as generated *output* text (per this
+project's principle 8 — "reply with ONLY the raw JSON," forcing verbatim relay through `output_key`).
+The three evidence JSONs for a company (`data/acme_corp/filings.json`, `prices.json`, `news.json`, or
+Globex's equivalents) are roughly 1,900-2,000 characters combined — order of magnitude only, not
+re-verified precisely for this note — which the baseline and 3-agent variant must pay as output tokens
+and the 1-agent variant never does. That's a material, structural fraction of the token gap between the
+1-agent variant and the others; not the whole story, since the 1-agent variant is still doing less total
+work, but real enough to disclose rather than read as pure analytical efficiency.
+
 ## Summary
 
 | Variant | Company | Output tokens | Groundedness | Ungrounded claims |
@@ -57,7 +83,7 @@ not what a naive prior would predict.
    `#### 2.`, `#### 3.`, `#### 4.` section headers; `extract_numbers` (production
    `argus/tools/claim_matcher.py`, unmodified by this ablation) pulls the bare `1`/`2`/`3`/`4` out of
    those headers as claimed numbers. `1.0` and `4.0` happen to land within the fixed `±0.5` matching
-   tolerance of real computed values (`1.49` and `4.15`/`4.70` respectively), so they ground by
+   tolerance of real computed values (`1.49` and `4.15` respectively), so they ground by
    coincidence; `2.0` and `3.0` don't happen to land near any real value, so they flag. **This is a
    pre-existing characteristic of production `claim_matcher.py` that the 8-agent baseline hits too** —
    not something this ablation's new code introduced — and it only surfaces when a run's markdown
