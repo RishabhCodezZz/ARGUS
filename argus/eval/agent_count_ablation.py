@@ -324,3 +324,72 @@ def build_one_agent() -> Agent:
         output_key=DRAFT_THESIS,
         **MODEL_GUARDRAILS,
     )
+
+
+_CHECKPOINT_PATH = Path(__file__).resolve().parent.parent.parent / ".agent_count_ablation_checkpoint.json"
+
+
+def _load_checkpoint() -> dict:
+    if _CHECKPOINT_PATH.exists():
+        return json.loads(_CHECKPOINT_PATH.read_text(encoding="utf-8"))
+    return {}
+
+
+def _save_checkpoint(results: dict) -> None:
+    serializable = {f"{v}||{c}": r for (v, c), r in results.items()}
+    _CHECKPOINT_PATH.write_text(json.dumps(serializable, indent=2), encoding="utf-8")
+
+
+async def main() -> None:
+    variants: dict[str, Callable[[], object]] = {
+        "8_agent_baseline": build_baseline,
+        "3_agent": build_three_agent,
+        "1_agent": build_one_agent,
+    }
+    checkpoint = _load_checkpoint()
+    results = {}
+    for key, value in checkpoint.items():
+        variant_name, company_name = key.split("||")
+        results[(variant_name, company_name)] = value
+
+    for variant_name, builder in variants.items():
+        for company_name, prompt in _COMPANY_SCENARIOS:
+            if (variant_name, company_name) in results:
+                print(f"--- Skipping {variant_name} / {company_name} (checkpointed) ---", file=sys.stderr)
+                continue
+            print(f"--- Running {variant_name} / {company_name} ---", file=sys.stderr)
+            seed = _seed_state_for_company(company_name) if variant_name == "1_agent" else None
+            run_result = await run_variant(
+                builder, prompt, app_name=f"argus_agent_count_{variant_name}", state=seed
+            )
+            scored = score_groundedness(run_result["thesis"], company_name)
+            result = {
+                "thesis": run_result["thesis"],
+                "output_tokens": run_result["output_tokens"],
+                "groundedness_ratio": scored["groundedness_ratio"],
+                "ungrounded": scored["ungrounded"],
+            }
+            results[(variant_name, company_name)] = result
+            _save_checkpoint(results)
+            print(
+                f"  output_tokens={result['output_tokens']} groundedness={result['groundedness_ratio']}",
+                file=sys.stderr,
+            )
+            await asyncio.sleep(20)
+
+    print("\n| Variant | Company | Output tokens | Groundedness | Ungrounded claims |")
+    print("|---|---|---|---|---|")
+    for (variant_name, company_name), result in results.items():
+        print(
+            f"| {variant_name} | {company_name} | {result['output_tokens']} | "
+            f"{result['groundedness_ratio']} | {len(result['ungrounded'])} |"
+        )
+
+    print("\n\n=== Full thesis text per run (for qualitative inspection) ===\n")
+    for (variant_name, company_name), result in results.items():
+        print(f"\n----- {variant_name} / {company_name} -----")
+        print(result["thesis"])
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
