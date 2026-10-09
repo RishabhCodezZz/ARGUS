@@ -5,455 +5,412 @@
 ![Tests](https://github.com/RishabhCodezZz/ARGUS/actions/workflows/tests.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Google ADK](https://img.shields.io/badge/Google%20ADK-2.5.0-4285F4)
-![Free to run](https://img.shields.io/badge/cost-%240%20(free%20tier)-success)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-> **A multi-agent research system that refuses to state a number it can't trace back to a source.**
+> A multi-agent research prototype combining executed financial calculations, adversarial review,
+> and deterministic numeric checks.
 
-Ask it about a company. It decides how much work the question needs, gathers data from three sources
-in parallel, computes every financial metric with **real executed Python** (never model-estimated),
-cross-checks marketing spin against filed numbers, red-teams its own draft with a second agent,
-fact-checks every figure against the source data, and — if the result scores below a measured
-confidence bar — **pauses and asks a human** instead of answering anyway.
+Ask ARGUS about a company. An Orchestrator chooses a single specialist, optional background
+retrieval, or a full research pipeline. The full path gathers three sources in parallel, executes
+Python for derived financial metrics, checks headline tone against profitability, drafts and
+critiques a thesis, then checks its numeric values before a release decision.
 
-Built on Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK). Runs entirely
-on the free Gemini API tier: no cloud bill, no credit card.
+Built with Google's [Agent Development Kit](https://google.github.io/adk-docs/) (ADK), pinned to
+**2.5.0**. The application and sample data run on your machine; **model inference and built-in code
+execution use the hosted Gemini API**. This is not an offline model or local Python sandbox.
+Development used free-tier access; current model availability and quotas depend on your account.
 
-![ARGUS answering a narrow question live in the ADK Dev UI — the request routes to a single specialist agent, which calls a real tool and returns a grounded answer](demo.gif)
+Only **Acme Corp** and **Globex** exist in the bundled dataset. They are fictional companies with
+sample filings, pre-labelled news, and historical monthly prices, not live financial feeds.
 
-*A narrow question routed to one specialist agent, in the live Dev UI — full run, no cuts. A broad
-"due diligence" request triggers the entire pipeline below instead; see
-["See it catch something"](#see-it-catch-something) for what that looks like.*
+![ARGUS answering a narrow question in the ADK Dev UI](demo.gif)
 
----
+*The recording shows a single-specialist request. Broad due-diligence requests use the complete
+pipeline below. Narrow and retrieval routes bypass its review loop, verifier, and human gate.*
 
-## Why this matters
+## The problem and approach
 
-Language models answer confidently whether or not they have the data. That failure is invisible —
-a fabricated figure looks exactly like a real one. In due diligence, an unsourced number isn't a
-small error; it's the entire risk.
+A fluent answer can contain bad arithmetic, unsupported conclusions, or optimistic framing that
+ignores losses. ARGUS separates those concerns into components with explicit inputs and outputs:
 
-ARGUS treats "is this number actually true?" as an engineering problem rather than a prompting
-problem:
+| Concern | Implementation | Practical limit |
+|---|---|---|
+| Arithmetic | Quant is instructed to execute Python for growth, margins, CAGR, debt change, and volatility | The model still generates the code and narrates its result |
+| Narrative versus profitability | A Python rule compares a headline's sentiment label with the sign of the named year's net income | This detects a tension, not whether a headline is factually false |
+| Unsupported reasoning | Critic/Refiner loop reviews and revises a draft against evidence | LLM review remains probabilistic |
+| Numeric fabrication | Python extracts numeric literals from the draft and value-matches against evidence and Quant output | No binding to metric, unit, company, or year |
+| Release decision | Python checks the numeric score and Critic verdict; a long-running tool supports human review | The Orchestrator must call the checks in the instructed sequence |
+| Evidence of quality | Offline tests, eight golden scenarios, and a six-run ablation experiment | Small historical sample, not a production reliability benchmark |
 
-| Problem | What ARGUS does about it |
-|---|---|
-| **Models invent arithmetic** | All math runs as real pandas/numpy code. Other agents may only *narrate* computed values — never calculate. |
-| **Models repeat the framing they're given** | A deterministic agent cross-checks each headline's sentiment against that year's actual filed net income. |
-| **You can't tell a good answer from a lucky one** | Every number in the final answer is matched against source data, producing an auditable groundedness score. |
-| **Confidently wrong output ships anyway** | Below a measured threshold, the run genuinely suspends for human approve / reject / redirect. |
-| **"It works" is unfalsifiable** | 8 golden scenarios, 5 deterministic scoring checks, and an ablation study measuring what each component actually contributes. |
+The design principle is **use code for calculations and checks that code can decide; use the LLM
+for interpretation, tool selection, and writing**. It reduces specific failure modes rather than
+guaranteeing that every answer is correct.
 
-**The one-line version:** most agent projects demo a happy path. This one measures which parts of
-the system are load-bearing, and publishes the result — including the part that surprised me.
-
-## Key differentiators
-
-- **Multi-agent orchestration with cost-aware routing** — a router picks between one specialist
-  (~2–3 model calls) and the full pipeline (~15–20), instead of running everything for every question.
-- **Deterministic financial computation** — Gemini's code executor runs genuine pandas; the model
-  never produces a figure it didn't compute.
-- **A grounding & verification pipeline** — an adversarial critic loop plus a mechanical claim-matcher
-  that scores every stated number and flags (rather than deletes) anything unverified.
-- **Two agents that make zero LLM calls, on purpose** — contradiction detection and the release gate
-  are pure Python, because a check shouldn't grade its own kind of work.
-- **Guardrails enforced in framework callbacks**, not prompt instructions — blocked requests are
-  intercepted before the model sees them.
-- **An evaluation harness with deterministic metrics** — never LLM-as-judge — plus a **resumable**
-  live ablation runner that checkpoints through rate limits.
-- **Ablation analysis with committed raw evidence**, so the headline result is checkable, not claimed.
-
-## Results at a glance
-
-| | |
-|---|---|
-| **Golden scenarios** | 8 (3 narrow · 1 keyword-retrieval · 4 broad) |
-| **Scoring checks** | 5 — 4 custom deterministic metrics + 1 built-in text-similarity |
-| **Groundedness, clean run** | **1.00** |
-| **Auto-release threshold** | 0.98 — set between two *observed* scores, not picked arbitrarily |
-| **Unit tests** | 120, pure Python, no API key, runs in seconds |
-| **Lint / type-check** | Ruff + Pyright, both clean, same zero-cost guarantee |
-| **Cost to reproduce** | $0 |
-
-### Evaluation baseline
-
-Run live against the real API. Status is reported as measured, including the one case that fails:
-
-| Scenario | Result |
-|---|---|
-| `narrow_market_price` · `narrow_filings` · `narrow_sentiment` | ✅ Pass all applicable metrics |
-| `rag_competitive_position` | ✅ Pass |
-| `broad_clean_acme` | ✅ Pass all four correctness metrics |
-| `broad_contradiction_globex` | ✅ Pass — contradiction correctly flagged |
-| `broad_adversarial_injection` | ✅ Correctly **refuses** an injected fake 2026 revenue figure |
-| `broad_missing_company_retry` | ⚠️ **Unreliable** — retries correctly in some runs, gives up in others |
-
-### Ablation study — what each component is actually worth
-
-Three pipeline variants, six live runs, same two scenarios. Raw output committed in
-[`eval/results/`](eval/results/ablation_2026-08-02.md).
-
-| Variant | Acme (clean) | Globex (hard) | Derived insight produced |
-|---|---|---|---|
-| **Full system** | 1.00 | 1.00 | CAGR, YoY growth, margins, volatility |
-| **No critic/refiner loop** | 1.00 | 0.9655 | Same four (1 claim flagged unverified) |
-| **No code execution** | 1.00 | 1.00 | **None** |
-
-**The finding I got wrong, and why that's the interesting part.** I predicted that removing code
-execution would cause hallucinated numbers. It didn't — groundedness stayed at a perfect 1.00 in
-both scenarios, because `synthesis_agent`'s instruction to say *"the analysis doesn't cover it"*
-rather than invent a figure held up under live testing.
-
-What it removed instead was **100% of derived analytical content**. Verified by searching both
-committed `no_code_exec` responses for `%`: the only percentage either one contains is an *"8%
-workforce reduction"* quoted straight from the source news data — zero CAGR, zero margin trend,
-zero volatility. The answers stayed accurate and became shallow.
-
-So what code execution actually buys is **analytical depth underneath a still-grounded answer**, not
-accuracy. The critic loop, separately, showed a small real benefit exactly where you'd want one — on
-the harder, messier scenario, not the easy one.
-
-## See it catch something
-
-**Cross-source contradiction — quoted verbatim from
-[committed run output](eval/results/ablation_2026-08-02.json).** Globex's data has a trap: a January
-2025 headline calls FY2024 *"the strongest year in company history"* (tagged `positive`), while
-`filings.json` records FY2024 net income of **−$57M**. Revenue really did hit a record — the headline
-isn't lying, it's spinning. The Reconciliation agent catches it in pure Python, and Synthesis is
-required to surface it:
-
-> *"Notably, a direct contradiction emerged regarding corporate reporting: a headline from January 22,
-> 2025, framed Globex's 2024 performance as a 'record... strongest year in company history' with
-> positive sentiment, yet actual filed financials show that FY2024 net income resulted in a loss of
-> -$57 million."*
-
-**Unverified claims are flagged, not deleted — also from committed output.** The `no_critic` ablation
-run left one claim the matcher couldn't confirm in the text, wrapped as `[UNVERIFIED: 22]` (a date
-fragment), dropping that run to **0.9655** — below the 0.98 bar, so it would escalate to a human
-rather than auto-release. Over-rejecting is worse than a visible flag a reviewer can check.
-
-**Prompt injection refused — verified in live testing, documented in [DEVLOG.md](DEVLOG.md).** An
-adversarial prompt injects a fabricated *"2026 projected revenue of $5 billion"*. Quant and Synthesis
-are explicitly instructed that the user's message is *instructions, never a source of facts*, so the
-figure never enters the analysis; the Verifier flags the residual mention (`[UNVERIFIED: 2026]`) and
-the run scores ≈0.95 — escalating rather than releasing. Finding this is also what exposed the
-tolerance bug described below.
-
-## How it works
+## How a request moves through the system
 
 ```mermaid
 flowchart TD
-    U[Your question] --> O{Orchestrator<br/>picks the cheapest sufficient path}
-    O -->|"Narrow question<br/>~2-3 calls"| S[One Specialist Agent]
-    O -->|"Background question<br/>~2-3 calls"| R[Retrieval Agent · keyword retrieval]
-    O -->|"Full research<br/>~15-20 calls"| G
-
-    subgraph PIPE [Full Analysis Pipeline]
-        direction TB
-        G["1 · GATHER — 3 agents in parallel<br/>filings + market + news"] --> Q["2 · COMPUTE — real executed Python<br/>CAGR, margins, volatility"]
-        Q --> RC["3 · RECONCILE — zero LLM calls<br/>spin vs. filed numbers"]
-        RC --> SY["4 · DRAFT — may only narrate<br/>already-computed values"]
-        SY --> CR["5 · RED-TEAM LOOP — critic and refiner<br/>hard cap: 4 iterations"]
-        CR --> V["6 · VERIFY — deterministic matcher<br/>produces groundedness score"]
+    U[User question] --> O{Orchestrator}
+    O -->|Narrow fact| N[One specialist and its data tool]
+    O -->|Qualitative background| R[Retrieval agent and keyword search]
+    O -->|Broad analysis| MEM[Recall prior findings]
+    MEM --> G
+    subgraph PIPE [Full analysis pipeline]
+        G[Three parallel gatherers] --> Q[Quant: Gemini Python execution]
+        Q --> RC[Reconciliation: Python rule]
+        RC --> S[Synthesis: draft thesis]
+        S --> CR[Critic and Refiner: up to four iterations]
+        CR --> V[Verifier: numeric matcher and flagged draft]
     end
-
-    V --> H{"Gate: score >= 0.98<br/>AND critic passed?"}
-    H -->|Yes| M[Release verbatim<br/>+ save memo and memory]
-    H -->|No| HU["PAUSE — wait for human<br/>approve / reject / redirect"]
-    HU --> M
+    V --> GS{Fresh evidence present?}
+    GS -->|Yes| H{Score at least 0.98 and Critic PASS?}
+    GS -->|Gather failed| RT[Suggest one retry or report missing data]
+    RT -.-> G
+    H -->|Yes| A[Release thesis; save memo and memory]
+    H -->|No| HU[Request human review]
+    HU -->|Approve| A
+    HU -->|Reject| X[Withhold analysis; no persistence]
+    HU -->|Redirect| RD[One rerun; see limitation below]
 ```
 
-Agents never pass strings to each other — they read and write typed keys on `session.state`, declared
-once in [`argus/state_keys.py`](argus/state_keys.py) so parallel agents provably can't collide.
+1. **Route.** `argus/agent.py` exposes `orchestrator_agent` as `root_agent`. Its LLM chooses among
+   specialists or the whole pipeline, each exposed as an `AgentTool`. Ambiguous analysis requests
+   are instructed to take the broad path.
+2. **Gather.** Three specialists call `get_filings`, `get_market_data`, and `get_news` concurrently.
+   They are instructed to return tool JSON verbatim. Each writes a separate evidence key and
+   freshness stamp so parallel branches avoid write collisions.
+3. **Compute.** Quant reads filings and prices through a callable instruction and uses
+   `BuiltInCodeExecutor`. It requests YoY revenue growth, yearly net margins, revenue CAGR,
+   first-to-last debt change, and standard deviation of monthly percentage returns.
+4. **Reconcile.** A custom `BaseAgent` calls `find_contradictions` in Python and bundles evidence
+   plus detected narrative-profitability tensions. It makes no LLM call.
+5. **Draft.** Synthesis uses the evidence bundle and Quant output to write trends, price behavior,
+   catalysts, and a confidence label. It is instructed to use supported numbers and to treat the
+   user's assertions as instructions, never as evidence.
+6. **Review.** Critic checks the draft against raw evidence and computed metrics. It can call
+   `exit_loop` and record `PASS`; otherwise Refiner rewrites the draft. `max_iterations=4` bounds
+   the loop even when the model forgets its exit tool.
+7. **Check numbers.** Verifier calls `check_grounding`, which extracts numbers directly from the
+   draft, matches values, and writes `meta.groundedness`. The Verifier LLM then applies
+   `[UNVERIFIED: ...]` flags and replaces the draft.
+8. **Decide release.** Back at Orchestrator level, `check_gather_status` checks evidence and request
+   stamps. A failure can suggest one corrected-name retry. `evaluate_gate` auto-approves when the
+   numeric score is at least **0.98** and the Critic recorded a clean `PASS`; otherwise the
+   Orchestrator is instructed to invoke the human-review tool.
+9. **Persist approved work.** The Orchestrator is instructed to present the thesis verbatim and
+   call `remember_finding` and `save_memo`. Both tools refuse writes unless `meta.human` records
+   `approve` or `auto_approved`.
 
-## Technical depth
+Workflow order is deterministic; LLM outputs and tool selection are not. `SequentialAgent`,
+`ParallelAgent`, and `LoopAgent` compose the pipeline, while an LLM routes into it. These template
+workflows remain the project's pinned implementation; ADK's
+[documentation](https://github.com/google/adk-docs/blob/main/docs/agents/workflow-agents/index.md)
+now describes newer graph workflows as their successor.
 
-<details>
-<summary><b>Architecture</b> — 11 agents, 13 tools, 3 composition primitives</summary>
+## State, tools, and framework boundaries
 
-- `ParallelAgent` fans out three independent gather specialists concurrently.
-- `LoopAgent` runs the critic ⇄ refiner cycle with a hard `max_iterations` cap.
-- `SequentialAgent` composes the six-phase pipeline in strict dependency order.
-- `AgentTool` wraps *any* agent — including the entire pipeline — as one callable tool, which is what
-  let a routing layer be added on top of a working system as a purely **additive** change.
-- Two agents are deliberately not LLMs: `ReconciliationAgent` is a custom `BaseAgent` with a pure
-  Python body, and the release gate is plain arithmetic.
+Agents exchange data through **`session.state`**, a key/value working store. The constants in
+[`argus/state_keys.py`](argus/state_keys.py) standardize names; they do not create a typed evidence
+schema. Many values are JSON or prose strings.
 
-</details>
+| State key | Writer / purpose |
+|---|---|
+| `evidence.filings`, `evidence.market`, `evidence.sentiment` | Separate parallel gatherer outputs |
+| `meta.request_id`, `evidence.*_run_id` | Current-turn identity and evidence freshness |
+| `analysis.quant` | Quant's narrated computation output |
+| `analysis.reconciled` | Evidence bundle and reconciliation findings |
+| `draft.thesis` | Synthesis draft, then sequential Refiner/Verifier replacements |
+| `review.critique` | Critic verdict or issues |
+| `meta.groundedness`, `meta.human` | Numeric score and release decision |
+| `retrieval.context` | Optional background retrieval output |
 
-<details>
-<summary><b>Verification</b> — how a number earns the right to appear</summary>
+`output_key` stores an LLM's final text, not a tool's raw return value. Gatherers are therefore
+instructed to relay JSON exactly, but this relay still depends on model behavior. Callable
+instructions read dotted keys directly instead of relying on ADK string-template substitution.
+The custom Reconciliation agent writes state by yielding an `EventActions(state_delta=...)` event.
 
-1. Computed by executed pandas in `quant_agent` — never generated.
-2. Narrated downstream only if it already exists in the computed metrics.
-3. Attacked by `critic_agent`, which re-reads the *raw evidence*, not just the draft.
-4. Matched against source data by `compute_grounding` — a pure function with a small **fixed**
-   tolerance (see the bug below for why fixed, not percentage).
-5. Scored, and gated against a threshold by code, not by the model's own judgment.
+Source inspection of the installed ADK `AgentTool` explained several design choices:
 
-</details>
+| Inner agent/tool boundary | Behavior in the pinned implementation |
+|---|---|
+| Session state | Parent snapshot enters; inner state deltas return to the parent |
+| Artifacts | Explicitly forwarded to the parent's artifact service |
+| Memory | Inner runner gets a fresh, throwaway in-memory service |
+| Long-running human-pause signal | Not forwarded from inner events |
+| Streaming configuration | Outer `RunConfig` is not passed to the inner runner |
 
-<details>
-<summary><b>Reliability engineering</b> — every loop has a counter, not a promise</summary>
+Consequently, **memory writes and human review live on the outer Orchestrator**. Memo saving also
+lives there so approval happens first. The Dev UI's streaming toggle affects Orchestrator calls;
+the wrapped pipeline does not inherit it. See [DEVLOG.md](DEVLOG.md) for observed behavior and
+[DECISIONS.md](DECISIONS.md) for the design rationale.
 
-- Review loop: `exit_loop` tool for the fast path, `max_iterations=4` as the actual guarantee.
-- Retry: a deterministic `meta.replan_count` budget of 1, not the model's willingness to stop.
-- Tool budget: 20 calls per session, enforced in a `before_tool_callback`.
-- The gate **fails closed** — a missing score, a low score, or a non-clean critique all escalate.
-- The ablation runner checkpoints to disk, so a rate-limit hit mid-run resumes instead of restarting.
+## What numeric groundedness means
 
-</details>
+[`check_grounding`](argus/tools/claim_matcher.py) normalizes the draft and sources, extracts numeric
+literals, and compares each distinct draft value against the pooled evidence and Quant values
+using a **fixed absolute tolerance of 0.5**. The score is the fraction of distinct extracted values
+that match, rounded to four decimals. A draft containing no extracted numbers scores 1.0.
 
-<details>
-<summary><b>Guardrails</b> — enforced in callbacks, not requested in prompts</summary>
+Normalization handles currency commas/signs, ISO and prose dates, quarter references, numeric
+ranges, and the specific phrase `loss of $N`. Calendar dates are excluded from the numeric check.
 
-- `before_model_callback` blocks trade-advice requests before the model is ever invoked.
-- `after_model_callback` strips unhedged action language from any agent's output.
-- `before_tool_callback` enforces the per-session tool budget.
-- `after_tool_callback` logs provenance and neutralizes instruction-like text found *inside* tool
-  results — the enforcement point a real scraped-filings API would flow through.
+This is **value matching**, not full factual verification or claim-level citation tracing. A correct
+`$2.85 billion` restatement of `2850 million` may be rejected; an incorrect `$500M` debt claim may
+pass because an unrelated `$500M` credit facility exists in the evidence. Qualitative claims depend
+on LLM review. Derived claims are compared partly against Quant's own prose output; only the eval
+harness independently recomputes the expected metrics from raw data. The Verifier's subsequent
+flagging rewrite and the Orchestrator's presentation are not mechanically rechecked afterward.
 
-</details>
+The **0.98 threshold is a prototype policy**, chosen between historical clean and adversarial
+scores, not a calibrated probability of correctness. Synthesis's low/medium/high confidence label
+is a separate LLM judgment.
+
+## A concrete example: Globex
+
+Globex's sample filings show revenue rising from **$2,200M in 2021 to $2,940.7M in 2025**, while net
+income falls from **$88M to -$118.2M**. A January 2025 headline calls FY2024 the strongest year in
+company history; that year's filed net income is **-$57M**.
+
+The reconciliation rule flags the positive headline label against negative FY2024 net income.
+That does not prove the record-revenue statement is false. It gives Synthesis a concrete tension
+to explain: revenue growth and deteriorating profitability can coexist.
+
+The computation stage can add CAGR, margins, debt change, and return volatility, which a simple
+headline summary does not provide. Current sample numbers and historical generated theses can be
+inspected in [`data/`](data/) and the [committed ablation output](eval/results/ablation_2026-08-02.json).
+
+## Guardrails and human review
+
+Four callbacks in [`argus/callbacks/guardrails.py`](argus/callbacks/guardrails.py) handle:
+
+- **Before model:** regex-based refusal of direct trade-advice requests.
+- **After model:** stripping selected action-advice/rating patterns and fenced text code blocks.
+- **Before tool:** counting calls and blocking calls beyond a budget of 20 in that context's state.
+- **After tool:** logging provenance and prefixing warnings on selected embedded-instruction patterns.
+
+Model-bearing agents receive model callbacks; agents with function tools also receive tool
+callbacks. These are narrow heuristics, not comprehensive advice detection or prompt-injection
+isolation. Flagged source text remains visible. `AgentTool` state snapshots and concurrent branches
+mean the tool counter is **not an atomic global API-call, token, or spending cap**.
+
+Human review uses `LongRunningFunctionTool(request_human_approval)`. The tool returns `None`, leaving
+its call pending for the Dev UI to resume with the human's answer. Supported replies include:
+
+```json
+{"decision": "approve"}
+{"decision": "reject", "reason": "The evidence is insufficient."}
+{"decision": "redirect", "scope": "Focus on profitability."}
+```
+
+Approve releases; reject withholds and prevents persistence. The implemented redirect instruction
+allows one rerun and, if it still misses the bar, **presents it with a caveat without a third review**.
+That branch is not independently live-verified and does not provide the same release guarantee as
+the normal approval path. Persistence still requires an approval in state.
 
 ## Getting started
 
-Three steps to a running system:
+Use **Python 3.12**, the version targeted by the project configuration and CI. From the repo root:
 
 ```bash
-# 1 — install
-python -m venv .venv && pip install -r requirements.txt
-#     activate:  .venv\Scripts\activate  (Windows)  |  source .venv/bin/activate  (macOS/Linux)
+python -m venv .venv
+```
 
-# 2 — add a free key from https://aistudio.google.com  ->  "Get API key"
-#     create argus/.env  (or copy argus/.env.example):
-#       GOOGLE_GENAI_USE_VERTEXAI=FALSE
-#       GOOGLE_API_KEY=your-key-here
+Activate the environment **before installing**:
 
-# 3 — run
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# macOS / Linux
+source .venv/bin/activate
+```
+
+Then install and configure:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Copy [`argus/.env.example`](argus/.env.example) to `argus/.env` and add a Gemini API key from
+[Google AI Studio](https://aistudio.google.com/). The file is ignored by Git:
+
+```dotenv
+GOOGLE_GENAI_USE_VERTEXAI=FALSE
+GOOGLE_API_KEY=your-key-here
+```
+
+Start the Dev UI:
+
+```bash
 python -m google.adk.cli web --port 8000
 ```
 
-Open `http://localhost:8000`, pick the `argus` app, and try:
+Open `http://localhost:8000`, select `argus`, and try:
 
-- *"What's Acme Corp's recent stock price trend?"* — routes to **one** agent; watch the others stay idle
-- *"Give me a full due-diligence analysis of Globex."* — the full pipeline; watch the planted
-  contradiction get caught and called out
+- `What's Acme Corp's recent stock price trend?` — a single specialist over sample prices.
+- `Give me a full due-diligence analysis of Globex.` — the full pipeline and planted tension.
+- `What's Acme Corp's competitive position?` — optional keyword retrieval over analyst notes.
 
-> **Heads up on the free tier:** a full analysis is ~15–20 model calls against a 15-requests/minute
-> ceiling, so back-to-back broad runs can hit a rate limit. That's quota, not a crash — wait a minute.
+Historical broad runs used roughly **15–20 model calls**, varying with review iterations, retries,
+and tool follow-ups. Rate limits and transient model failures can still abort a run. Configured
+models use up to five attempts with exponential backoff; this cannot resolve sustained quota loss.
 
-## Running the tests
+Model assignments are centralized in [`argus/config.py`](argus/config.py):
+
+| Role | Checked-in model ID |
+|---|---|
+| Orchestrator, three gatherers, Quant | `gemini-3.5-flash-lite` |
+| Critic, Refiner, Verifier | `gemini-3.1-flash-lite` |
+| Synthesis | `gemini-3.5-flash` |
+| Retrieval | `gemini-2.5-flash` |
+
+These reflect historical availability and quota observations, not a guarantee of access today.
+`MODEL_PRO` aliases `MODEL_FLASH`. Check your account's supported models and limits before live runs.
+
+## Tests and CI
 
 ```bash
 python -m pytest tests/ -v
-```
-
-120 tests, pure Python, no API calls, runs in seconds. Every tool's pure logic is tested directly;
-the model-facing behavior is verified by live runs documented in [DEVLOG.md](DEVLOG.md).
-
-```bash
-pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt
 ruff check argus/ tests/
 pyright argus/
 ```
 
-Lint and type-check, same zero-API-cost guarantee as the test suite above.
+**156 offline tests** cover matching/normalization, reconciliation, keyword retrieval, approval checks
+for persistence, gather freshness/retry status, guardrail patterns/counters, and eval helpers. They
+import ADK but make no model calls and need no API key. Passing them does not prove live routing or
+human-resume behavior; historical live checks are recorded in [DEVLOG.md](DEVLOG.md).
 
-CI runs all three (`pytest`, Ruff, Pyright) on every push. It deliberately **never** runs `adk eval`
-— that needs a real API key and would burn free-tier quota on every commit.
+[GitHub Actions](.github/workflows/tests.yml) runs pytest and a separate Ruff/Pyright job for pushes
+and pull requests to `main`. It deliberately does not run live `adk eval` or spend Gemini quota.
 
-## Reproducing the evaluation
+## Evaluation and measured results
 
-Both commands need the eval-only extras (pandas/nltk/rouge-score), kept out of the base requirements
-on purpose. Full commands in [DEVLOG.md](DEVLOG.md#reproducing-the-results).
+[`eval/argus_evalset.json`](eval/argus_evalset.json) defines **eight golden scenarios**: three narrow,
+one retrieval, and four broad (clean, planted tension, missing company/retry, adversarial injection).
+A golden is an expected reference response and tool trajectory, not a guarantee of identical prose.
+
+| Scoring check | What it measures | Threshold |
+|---|---|---|
+| `tool_names_trajectory` | Expected tool names occur in order; extra calls allowed, arguments ignored | 1.0 |
+| `numeric_fidelity` | Response values match independently recomputed raw/derived filing and market values | 0.8 |
+| `independent_groundedness` | Recompute score from raw mock evidence and independently derived metrics | 0.9 |
+| `contradiction_correctness` | Disclosure heuristic agrees with planted narrative-profitability findings | 1.0 |
+| `response_match_score` | Built-in reference-text similarity; a soft wording check | 0.25 |
+
+Four custom metrics live in [`argus/eval/custom_metrics.py`](argus/eval/custom_metrics.py); none uses
+an LLM judge. Applicable checks depend on the route. The independent metrics recompute the numeric
+reference but share the production parser/matcher, so shared parsing defects remain possible.
+
+Historical runs demonstrated narrow routing, retrieval, clean broad analysis, the planted Globex
+tension, and resistance to an injected future-revenue claim. **Missing-company retry remains
+variable.** The September 3 live batch initially passed 5/8 cases. Metric fixes and a reference-answer
+recalibration projected **8/8 by offline rescoring of those saved responses**; a confirming live
+rerun was deferred. Do not present that projection as a fresh live 8/8 result.
+
+Install live-evaluation extras separately:
 
 ```bash
-pip install -r requirements-eval.txt
+python -m pip install -r requirements-eval.txt
 ```
+
+From the repository root with the key configured:
+
+```bash
+python -m google.adk.cli eval argus eval/argus_evalset.json --config_file_path eval/test_config.json --print_detailed_results
+python -m argus.eval.ablation
+```
+
+Both invoke Gemini. See [reproduction notes](DEVLOG.md#reproducing-the-results) for the historical
+NLTK workaround and shell environment setup. Ablation checkpoints completed scenarios to the
+ignored `.ablation_checkpoint.json`; existing entries are reused, so use a fresh checkpoint when
+measuring changed code or models.
+
+## Ablation study: removing components
+
+The [August 2 experiment](eval/results/ablation_2026-08-02.md) ran three variants on two companies,
+once each: **six live runs**, with [raw outputs committed](eval/results/ablation_2026-08-02.json).
+
+| Variant | Acme groundedness | Globex groundedness | Derived metric families present |
+|---|---|---|---|
+| Baseline | 1.00 | 1.00 | CAGR, YoY growth, margins, volatility |
+| No Critic/Refiner | 1.00 | 0.9655 | Same four |
+| No Quant (`no_code_exec`) | 1.00 | 1.00 | None |
+
+Removing Quant preserved value-grounding scores but removed the four derived metric families in
+these responses. **The entire Quant agent was removed**, not just its executor, so the experiment
+measures the computation stage as a whole. The lower `no_critic` score came from a date fragment
+(`22`), a parser issue addressed later; it is not strong evidence of better financial reasoning.
+
+The runner invokes pipeline variants directly, bypassing Orchestrator, memory, and the human gate.
+Scores come from each run's own numeric matcher; derived-content assessment was manual. With one
+run per variant/company, later parser changes, and later model reassignment, these are historical
+observations rather than a statistically established benefit or current success-rate benchmark.
 
 ## Project structure
 
-```
+```text
 argus/
-  agent.py                 entry point (root_agent -> orchestrator)
-  config.py                model IDs, thresholds
-  state_keys.py            shared state namespace
-  agents/                  orchestrator, gather, quant, reconciliation, synthesis,
-                             critic, refiner, verifier, retrieval, pipeline
-  tools/                   claim matcher, reconciler, memory, HITL gate, memo writer
-  callbacks/               the 4 always-on guardrails
-  eval/                    deterministic metrics + the ablation runner
-data/                      mock company data (Acme Corp, Globex)
-eval/                      8 golden scenarios, scoring config, committed results
-tests/                     120 pytest tests
-.github/workflows/         CI: pytest + Ruff + Pyright, every push (never adk eval)
+  agent.py                 ADK entry point: root_agent = orchestrator_agent
+  config.py                model assignments, retry settings, release threshold
+  state_keys.py            shared state-key constants
+  agents/                  router, gatherers, Quant, reconciliation, drafting/review, retrieval
+  tools/                   mock loaders, matcher, reconciler, retrieval, memory, HITL, memo
+  callbacks/               model/tool lifecycle guardrails
+  eval/                    custom scoring functions and ablation runner
+data/                      two fictional companies and background analyst notes
+eval/                      golden scenarios, scoring configuration, historical ablation results
+tests/                     156 offline tests
+.github/workflows/         pytest + Ruff + Pyright CI
 ```
 
-## Deployment: built, measured, deliberately withdrawn
+Base dependencies are pinned in `requirements.txt`; development and live-evaluation extras are
+separate. [DEVLOG.md](DEVLOG.md) records build history; [DECISIONS.md](DECISIONS.md) records rationale.
+Private planning and interview notes are intentionally ignored by Git.
 
-A containerized deployment was built and working — a FastAPI server, a bring-your-own-key web UI so
-visitors used their own Gemini quota rather than mine, and a Dockerfile carrying no credentials.
+## Engineering lessons
 
-It was then **removed on purpose.** One full analysis is ~15–20 model calls against a
-15-requests/minute free-tier ceiling. A public link would fail on the first serious question anyone
-asked it — and a demo that face-plants in front of a reviewer is worse than no demo. The workload
-genuinely needs a paid tier or higher rate limits; the architecture isn't the constraint, the
-economics are.
+- **A clean trace can still hide a broken feature.** A memory write inside `AgentTool` succeeded
+  into a throwaway store. Cross-session recall exposed it; source inspection explained why the
+  write had to move to the outer Orchestrator.
+- **Decide from state, not polished failure prose.** A failed gather still produced a coherent
+  low-confidence thesis. `check_gather_status` now inspects evidence directly, including per-turn
+  stamps so old evidence cannot count as a new gather.
+- **Relative tolerance can validate invented identifiers.** A 1% tolerance around 2025 admitted
+  fabricated 2026. Fixed absolute tolerance blocks that adjacent-year case. Date normalization
+  must also run on source text, or a day fragment can validate an unrelated small number.
+- **Instructions do not enforce persistence policy.** Both saving tools now check approval in code;
+  a failed gate writes `pending_review` to replace any prior approval.
+- **Evaluation code needs verification too.** A private parser copy drifted behind production;
+  a disclosure metric expected “contradiction” after Synthesis had been changed to prefer “tension”.
+  Sharing normalization and testing the scoring helpers addressed those failures.
 
-Recording that as a decision rather than quietly shipping a broken link is the honest version, and
-the reasoning generalizes: *know your system's cost profile before you put it in front of users.*
+## Status and remaining limits
 
-## Tradeoffs
+The local pipeline, routing, review, numeric checking, human approve/reject, memory, artifacts, and
+historical evaluation/ablation runs are implemented. A containerized server/UI experiment was later
+withdrawn; **there is no deployment implementation or live hosted endpoint in this checkout**.
+Cloud deployment and production tracing are future work. Deployment history is not a claim of a
+currently deployed Cloud Run or Vertex service.
 
-| Decision | Why | What it cost |
-|---|---|---|
-| Mock data, not live APIs | Keeps the effort on architecture instead of auth/pagination/schema drift | Real-world data messiness is unexercised |
-| RAG is keyword overlap, not embeddings | RAG here is *one optional subordinate tool*, not the thesis | Not real semantic search — labelled a stub, not dressed up |
-| Deterministic metrics over LLM-as-judge | An LLM scorer means the system grades its own homework | Metrics only check what can be checked mechanically |
-| 8 eval scenarios, not 20+ | One broad scenario is ~16–20 calls against a 15/min ceiling | Thinner coverage than a funded project would have |
-| Literal number matching | Loosening it reopens a fabricated-year hole (see below) | `"$2.85 billion"` vs `"2850 million"` scores as ungrounded |
-| Flash-Lite over a Pro model | Pro left the free tier; Flash's `-latest` alias caps at 20/day | Lower reasoning ceiling than the system could use |
+Remaining limitations:
 
-## Bugs, and what each one taught me
+- **Model-mediated control flow.** Correct retry suggestions and status decisions are Python;
+  actually calling the retry, verifier, or gate still depends on the LLM following instructions.
+  The retry counter is session-scoped. A deterministic controller is a future improvement.
+- **Numeric scope.** Matching is value-only, excludes calendar dates, deduplicates values, and
+  accepts no-number text at 1.0. It does not verify qualitative truth, citations, or correct context.
+  Independent in-run recomputation and structured metric/unit/year matching remain open.
+- **State lifecycle.** Freshness stamps and pending-approval resets have offline regression tests;
+  the specific multi-turn stale-state cases still need dedicated live verification.
+- **Human redirect.** Implemented with the caveated-release behavior above, not independently
+  live-verified. Normal approve/reject paths were documented end to end.
+- **Runtime memory.** Cross-session within one process, cleared on restart; keyword retrieval,
+  not a durable semantic database. Recall provides continuity, not evidence for a new analysis.
+- **Retrieval.** Keyword overlap over a tiny local corpus, no embeddings or vector database.
+- **Data and scale.** Mock inputs, regex-based guardrails, small eval coverage, API quota constraints,
+  and no production deployment/load-test evidence.
 
-Every one below was found by running the system and reading what actually happened, not by reading
-the code more carefully. Full build-by-build list in [DEVLOG.md](DEVLOG.md).
-
-**A save that went nowhere.** A memory-write step sat in the obvious place, passed every test, threw
-no errors, and produced a clean trace — while landing in a throwaway store the framework creates
-fresh per tool call, discarded microseconds later. Only exposed because a second session's recall
-came back empty despite a flawless first run. The fix wasn't better testing; it was reading the
-framework's source to learn which services actually cross a tool-wrapping boundary and which don't.
-*The lesson stuck:* at the next stage I hit a structurally identical decision (where to put the
-human-approval gate) and read the source **first** — one bug caught by debugging, the next avoided
-by reading.
-
-**The system couldn't tell its own failure from a real answer.** A total data-gathering failure
-still produced a well-formed *"Analytical Thesis… Confidence Level: Low"* — which reads as a valid
-answer to another model, not an error, so the retry logic silently never fired. Fixed by making
-routing decisions read `session.state` directly instead of asking a model to interpret another
-model's prose. *Generalizes to:* control flow must never depend on interpreting text.
-
-**A rounding rule let a fabricated number pass.** The matcher allowed 1% tolerance — sensible for
-money. But 1% of the year 2025 is about 20, so an injected fake *"2026"* sat comfortably within
-tolerance of a real *"2025"* and scored as grounded. Found by attacking the system with an
-adversarial prompt, not by re-reading code. Fixed with a small **fixed** tolerance instead of a
-percentage.
-
-**Explaining an action isn't the same as taking it.** Agents sometimes *narrate* a step instead of
-performing it — writing "PASS" without calling the exit tool, or announcing a human-review pause
-without calling the tool that actually pauses the run. Clearer instructions made it rarer, but never
-eliminated it. *Generalizes to:* the hard counter (`max_iterations`, a retry budget) is the real
-safety net; instructions are just the optimization.
-
-**The measuring instrument needed testing too.** The first live eval run scored correct answers as
-wrong — all six bugs were in the harness's own number parsing: a comma splitting `$2,850` into two
-claims, a `$` sitting between a minus sign and its digits flipping a real −$57M loss into +57. Fixed
-with regression coverage before trusting any result, and production `claim_matcher.py` was
-deliberately left untouched at the time — you don't modify a verified production path to fix a
-measurement-only edge case. *That call got reversed later* (next entry) once the reason for it
-stopped being true.
-
-**The repo contradicted itself in public.** A cross-read of the docs against each other found the
-README describing a feature as reliably working while the dev log, in the same repo, documented it
-as ~50% reliable. The disclosure was the strength; hiding it was the liability — same principle as
-the section below.
-
-**A verifier that could pass by saying less.** The Groundedness Verifier's own tool
-(`check_grounding`) took a list of numbers *the calling model had already decided were worth
-checking* — it worked, but nothing forced that list to be complete, or even non-empty. An external
-code review (not internal testing — a second reviewer given the code cold) found the real failure
-mode: an under-enumerated list scores a vacuous, perfect 1.0, indistinguishable from a genuinely
-clean draft, and a number the draft literally stated could go unchecked without anyone noticing.
-Fixed by having the tool read the draft and extract its own numbers mechanically instead of trusting
-a supplied list — the model no longer decides what gets checked, only what to do with the result.
-This is also the reason the "measuring instrument" entry above got reversed: `check_grounding` now
-reads real draft prose directly, the same prose the eval harness's date/comma-parsing bugs were found
-in, so those fixes needed to move from eval-only into production `claim_matcher.py` after all.
-
-**Two tools that only refused politely.** `save_memo` and `remember_finding` each say, in their own
-docstrings, "never call this after a rejection" — and each would have run anyway if called after one,
-since nothing in the code actually checked. Confirmed live: calling either right after a real human
-rejection saved the memo and wrote to memory regardless. Both now refuse outright unless
-`meta.human.decision` is exactly `"approve"` or `"auto_approved"` — the same "code enforces it, a
-comment doesn't" rule this project states as a principle everywhere else, actually applied here.
-
-**Missing data and successful data looked the same.** If a broad request's evidence never actually
-got written to state — a skipped call, a stale session, anything leaving `evidence.filings/market/
-sentiment` empty — the gather-status check read that as success, because an empty result has no
-`"error"` key to notice. Now checked explicitly. **Generalizes to:** "no error" and "actually
-succeeded" are not the same claim, and code that treats them as interchangeable will eventually prove
-it the hard way.
-
-**A "closest match" nobody guaranteed matched.** The Orchestrator's one bounded retry, after a failed
-company lookup, asked the model to eyeball which name in a short list was closest to what the user
-actually meant — a real judgment call with no fallback if it judged wrong. Now computed with a plain
-string-distance comparison (`difflib`) before the model ever sees the choice.
-
-All four of the above were surfaced by a single external code review of this repo, not by further
-internal testing — a second, independent reader looking at the same code cold. Every finding was
-reproduced against the real code before being trusted, and reproduced again after the fix, the same
-verify-before-believing standard this README already asks of the system's own outputs, applied to a
-review *of* the system too. Ruff and Pyright were added to CI in the same pass (a new, separate,
-zero-API-cost lint job — see `.github/workflows/tests.yml`), and turned up three smaller, genuine
-issues of their own along the way: an under-typed recursive function in the injection-screening
-guardrail, four sites building a list from a field the ADK types as possibly `None`, and an
-un-null-checked session lookup in the ablation script. All fixed, all with regression coverage.
-
-## Status & known gaps
-
-Every component described above is built and has been exercised end to end on real runs: the routing
-layer, the full pipeline, the self-critique loop, grounding verification, guardrails, memory, the
-human-approval gate, memo artifacts, and the evaluation and ablation harness. Two paths within that
-are **not** independently live-verified — the human gate's `redirect` branch and the bounded retry's
-*reliability* — and are called out below rather than folded into a blanket claim.
-
-**Stated plainly, because a disclosed gap beats a hidden one:**
-
-- **Retry-with-closest-match is ~50% reliable.** *Which name* to retry with is now computed
-  deterministically (`difflib`, not a model judgment call — see "Bugs" above), but *whether* the
-  Orchestrator reliably attempts the retry at all is a separate, still-open question: across live
-  runs it has sometimes given up immediately, claiming no alternative exists when one clearly does.
-  Real, documented, not fully resolved by the name-matching fix.
-- **The `redirect` path of the human gate is implemented but not live-verified** — approve and reject
-  both were, end to end.
-- **Groundedness matching is value-only, not context-aware.** The verifier checks that each numeric
-  literal in the draft *appears somewhere* in the evidence — it does not bind that number to a
-  metric, unit, or year. Two consequences: a unit-converted restatement (`"$2.85 billion"` for a
-  filed `"$2,850 million"`) scores as *ungrounded* (left strict on purpose — loosening it reopens the
-  fabricated-year hole described in "Bugs"); and, conversely, a number can score as *grounded* purely
-  because an unrelated figure of the same value exists elsewhere in the evidence (a claimed `$500M`
-  debt "matching" an unrelated `$500M` credit line). This is distinct from the ISO-date-fragment bug,
-  which is fixed. Structured metric/unit/year matching would close it; deferred rather than rushed,
-  for the same reason as the retry and memory gaps above. Treat the groundedness score as a strong
-  check on *numeric fabrication*, not as proof every figure is used in its correct context.
-  Two *specific* pre-extraction normalizations were added after live tuning showed clean runs
-  systematically missing the 0.98 bar on phrasing alone: prose calendar dates ("January 22, 2025",
-  "Q2 2025") are stripped so a narrated day-of-month isn't scored as a claim, and `"loss of $57
-  million"` is signed to `-57` so it grounds against a filing's signed net income. Neither loosens
-  fabrication detection — a `$`-less "loss of 8%" and an injected fake year are both untouched.
-- **The cross-run memory is a *runtime* store, not a durable one.** It uses ADK's
-  `InMemoryMemoryService`: a later run on a company it has already seen starts warm, but only within
-  the same running process — the store is cleared on restart. A cross-restart version would need a
-  custom SQLite-backed `MemoryService`; deferred on purpose (the non-in-memory implementations ADK
-  ships are Vertex-AI-backed, which the fully-local decision rules out). See
-  [DECISIONS.md](DECISIONS.md).
-- **`analysis.quant` is a grounding source *and* the thing being narrated.** The Verifier matches the
-  draft's numbers against the raw evidence **plus** the Quant agent's own computed output
-  ([`claim_matcher.py`](argus/tools/claim_matcher.py)). That's deliberate — it's how a legitimately
-  *derived* figure (CAGR, margin) scores as grounded at all — and the Quant agent runs real executed
-  code, not model estimation, so the computed values are re-derivable. But it does mean a derived
-  claim is checked partly against a figure the same pipeline produced, not a wholly independent
-  reference. The eval harness's `independent_groundedness` metric re-computes those metrics from raw
-  data specifically to avoid this, but the in-pipeline Verifier does not. The clean separation —
-  a second, independent computation path feeding the in-run Verifier — is the largest remaining design
-  improvement.
-- **The stale-evidence and stale-approval guards (below) are unit-tested, not yet multi-turn
-  live-verified.** `check_gather_status` now requires each gatherer's per-request stamp to match the
-  current turn, and `evaluate_gate` now resets `meta.human` to `pending_review` on any non-approval —
-  both covered by regression tests. The end-to-end multi-turn scenario (turn 2 skips the pipeline,
-  status tool correctly reports stale) still needs a live `adk web` pass, same as `check_gather_status`
-  has always been treated.
-
-See [DEVLOG.md](DEVLOG.md) for the full build history and [DECISIONS.md](DECISIONS.md) for design
-rationale.
+See [DEVLOG.md](DEVLOG.md) and [DECISIONS.md](DECISIONS.md) for the history behind these choices.
