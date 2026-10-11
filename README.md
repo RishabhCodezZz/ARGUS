@@ -23,7 +23,9 @@ Development used free-tier access; current model availability and quotas depend 
 Only **Acme Corp** and **Globex** exist in the bundled dataset. They are fictional companies with
 sample filings, pre-labelled news, and historical monthly prices, not live financial feeds.
 
-<!-- Demo video: replace this comment with the GitHub-uploaded attachment URL on its own line. -->
+
+https://github.com/user-attachments/assets/14850945-2dd0-4d36-98d8-d0d434d39a92
+
 
 *Narrow questions use a single specialist; broad due-diligence requests use the complete pipeline
 below. Narrow and retrieval routes bypass its review loop, verifier, and human gate.*
