@@ -23,10 +23,10 @@ Development used free-tier access; current model availability and quotas depend 
 Only **Acme Corp** and **Globex** exist in the bundled dataset. They are fictional companies with
 sample filings, pre-labelled news, and historical monthly prices, not live financial feeds.
 
-![ARGUS answering a narrow question in the ADK Dev UI](demo.gif)
+<!-- Demo video: replace this comment with the GitHub-uploaded attachment URL on its own line. -->
 
-*The recording shows a single-specialist request. Broad due-diligence requests use the complete
-pipeline below. Narrow and retrieval routes bypass its review loop, verifier, and human gate.*
+*Narrow questions use a single specialist; broad due-diligence requests use the complete pipeline
+below. Narrow and retrieval routes bypass its review loop, verifier, and human gate.*
 
 ## The problem and approach
 
